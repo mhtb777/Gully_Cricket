@@ -43,6 +43,12 @@ function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
     totalRuns: 0,
     totalWickets: 0,
     extras: 0,
+  extrasBreakdown: {
+  wides: 0,
+  noBalls: 0,
+  byes: 0,
+  legByes: 0,
+},
     legalBalls: 0,
     battingOrder: [],
     currentBowlerId: null,
@@ -52,6 +58,7 @@ function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
     batsmen: {},
     bowlers: {},
     overHistory: [[]],
+    fallOfWickets: [],
     complete: false,
   };
 }
@@ -304,15 +311,19 @@ const persistMatches = async (next) => {
     console.error(e);
   }
 };
-  const persistLive = async (next) => {
-    setLiveMatch(next);
-    try {
-      if (next) await window.storage.set("live-match", JSON.stringify(next), true);
-      else await window.storage.delete("live-match", true).catch(() => {});
-    } catch (e) {
-      console.error(e);
+const persistLive = (next) => {
+  setLiveMatch(next);
+
+  try {
+    if (next) {
+      localStorage.setItem("live-match", JSON.stringify(next));
+    } else {
+      localStorage.removeItem("live-match");
     }
-  };
+  } catch (e) {
+    console.error(e);
+  }
+};
 
   const addPlayer = (name) => {
     const trimmed = name.trim();
@@ -375,7 +386,9 @@ const persistMatches = async (next) => {
       runsToTeam = runs;
       runsToBatsman = runs;
       isLegalBall = true;
-      ballLabel = wicket ? "W" : String(runs);
+      ballLabel = wicket
+  ? (wicket.type === "runout" && runs > 0 ? `${runs}+W` : "W")
+  : String(runs);
     }
 
     inn.totalRuns += runsToTeam;
@@ -401,31 +414,80 @@ const persistMatches = async (next) => {
     }
 
     if (isLegalBall) inn.legalBalls += 1;
-    inn.extras = (inn.extras || 0) + (runsToTeam - runsToBatsman);
+    // Extras total + category-wise breakdown
+const extraAmount = runsToTeam - runsToBatsman;
+
+inn.extras = (inn.extras || 0) + extraAmount;
+
+if (!inn.extrasBreakdown) {
+  inn.extrasBreakdown = {
+    wides: 0,
+    noBalls: 0,
+    byes: 0,
+    legByes: 0,
+  };
+}
+
+if (extra === "wide") {
+  inn.extrasBreakdown.wides += extraAmount;
+} else if (extra === "noball") {
+  inn.extrasBreakdown.noBalls += extraAmount;
+} else if (extra === "bye") {
+  inn.extrasBreakdown.byes += extraAmount;
+} else if (extra === "legbye") {
+  inn.extrasBreakdown.legByes += extraAmount;
+}
 
     let batsmanOutId = null;
     if (wicket) {
       batsmanOutId = wicket.batsmanOutId || striker;
       inn.totalWickets += 1;
-      if (inn.batsmen[batsmanOutId]) {
-        inn.batsmen[batsmanOutId].out = true;
-        inn.batsmen[batsmanOutId].howOut = wicket.type;
-      }
+
+      if (!inn.fallOfWickets) {
+  inn.fallOfWickets = [];
+}
+
+inn.fallOfWickets.push({
+  wicketNumber: inn.totalWickets,
+  batsmanId: batsmanOutId,
+  score: inn.totalRuns,
+  legalBalls: inn.legalBalls,
+});
+
+if (inn.batsmen[batsmanOutId]) {
+  inn.batsmen[batsmanOutId].out = true;
+  inn.batsmen[batsmanOutId].howOut = wicket.type;
+  inn.batsmen[batsmanOutId].fielderId = wicket.fielderId || null;
+  inn.batsmen[batsmanOutId].bowlerId = bowlerId || null;
+}
       if (bowlerId && wicket.type !== "runout") {
         inn.bowlers[bowlerId].wickets += 1;
       }
     }
 
     // strike rotation for completed (non-wicket) deliveries
-    if (!wicket) {
-      const rotatingRuns = extra === "wide" ? extraRuns : extra === "noball" ? runs : runsToTeam;
-      if (rotatingRuns % 2 === 1) {
-        inn.strikerId = nonStriker;
-        inn.nonStrikerId = striker;
-      }
-    } else if (wicket.type === "runout" && wicket.batsmanOutId === nonStriker) {
-      // non-striker run out: keep striker as is
-    }
+// strike rotation
+if (!wicket) {
+  const rotatingRuns =
+    extra === "wide"
+      ? extraRuns
+      : extra === "noball"
+      ? runs
+      : runsToTeam;
+
+  if (rotatingRuns % 2 === 1) {
+    inn.strikerId = nonStriker;
+    inn.nonStrikerId = striker;
+  }
+} else if (wicket.type === "runout") {
+  // Run-out se pehle jitne runs complete hue,
+  // unke according batsmen ne ends change kiye honge.
+  if (runs % 2 === 1) {
+    const s = inn.strikerId;
+    inn.strikerId = inn.nonStrikerId;
+    inn.nonStrikerId = s;
+  }
+}
 
     inn.overHistory[inn.overHistory.length - 1].push(ballLabel);
 
@@ -452,6 +514,7 @@ const persistMatches = async (next) => {
     if (wicket && !allOut) {
       awaitingBatsman = true;
       if (wicket.batsmanOutId === inn.nonStrikerId) {
+        inn.nonStrikerId = null;
         // non striker out, striker unaffected, but we still need a replacement for nonstriker slot
       } else {
         inn.strikerId = null;
@@ -555,18 +618,37 @@ const persistMatches = async (next) => {
     persistLive(nextMatch);
   };
 
-  const setNextBatsman = (batsmanId, forStriker) => {
-    if (!liveMatch) return;
-    const nextMatch = JSON.parse(JSON.stringify(liveMatch));
-    const idx = nextMatch.currentInningsIdx;
-    const inn = nextMatch.innings[idx];
-    if (!inn.batsmen[batsmanId])
-      inn.batsmen[batsmanId] = { runs: 0, balls: 0, fours: 0, sixes: 0, out: false, howOut: null };
-    if (forStriker) inn.strikerId = batsmanId;
-    else inn.nonStrikerId = batsmanId;
-    if (!inn.battingOrder.includes(batsmanId)) inn.battingOrder.push(batsmanId);
-    persistLive(nextMatch);
-  };
+const setNextBatsman = (batsmanId) => {
+  if (!liveMatch) return;
+
+  const nextMatch = JSON.parse(JSON.stringify(liveMatch));
+  const idx = nextMatch.currentInningsIdx;
+  const inn = nextMatch.innings[idx];
+
+  if (!inn.batsmen[batsmanId]) {
+    inn.batsmen[batsmanId] = {
+      runs: 0,
+      balls: 0,
+      fours: 0,
+      sixes: 0,
+      out: false,
+      howOut: null
+    };
+  }
+
+  // Jo slot empty hai, naye batsman ko wahi bhejo
+  if (!inn.strikerId) {
+    inn.strikerId = batsmanId;
+  } else if (!inn.nonStrikerId) {
+    inn.nonStrikerId = batsmanId;
+  }
+
+  if (!inn.battingOrder.includes(batsmanId)) {
+    inn.battingOrder.push(batsmanId);
+  }
+
+  persistLive(nextMatch);
+};
 
   const setBatsmenPositions = (strikerId, nonStrikerId) => {
   if (!liveMatch || strikerId === nonStrikerId) return;
@@ -1066,10 +1148,17 @@ function LiveScoring({ liveMatch, players, recordBall, undoLastBall, canUndo, se
   const battingTeamName = inn.battingTeam === "A" ? liveMatch.teamAName : liveMatch.teamBName;
   const bowlingTeamName = inn.bowlingTeam === "A" ? liveMatch.teamAName : liveMatch.teamBName;
 
-  const [pendingRuns, setPendingRuns] = useState(null); // for extras needing extra run input
-  const [wicketFlow, setWicketFlow] = useState(false);
-  const [wicketType, setWicketType] = useState("bowled");
-  const [confirmCancel, setConfirmCancel] = useState(false);
+const [pendingRuns, setPendingRuns] = useState(null);
+const [wicketFlow, setWicketFlow] = useState(false);
+const [wicketType, setWicketType] = useState("bowled");
+const [wicketFielder, setWicketFielder] = useState(null);
+const [runoutRuns, setRunoutRuns] = useState(0);
+const [runoutBatsman, setRunoutBatsman] = useState(null);
+const [confirmCancel, setConfirmCancel] = useState(false);
+const [showLiveScorecard, setShowLiveScorecard] = useState(false);
+
+
+
 
   const [manualBatsmenFlow, setManualBatsmenFlow] = useState(false);
   const [manualStriker, setManualStriker] = useState(inn.strikerId);
@@ -1079,6 +1168,26 @@ function LiveScoring({ liveMatch, players, recordBall, undoLastBall, canUndo, se
   setManualStriker(inn.strikerId);
   setManualNonStriker(inn.nonStrikerId);
 }, [inn.strikerId, inn.nonStrikerId]);
+
+if (showLiveScorecard) {
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        onClick={() => setShowLiveScorecard(false)}
+        style={{ marginBottom: 12 }}
+      >
+        ← Back to scoring
+      </Button>
+
+      <Scorecard
+        match={liveMatch}
+        players={players}
+        onBack={() => setShowLiveScorecard(false)}
+      />
+    </div>
+  );
+}
 
   const needsOpeners =
   inn.legalBalls === 0 &&
@@ -1093,6 +1202,8 @@ const needsNewBowler =
  // const needsOpeners = !inn.strikerId || !inn.nonStrikerId || !inn.currentBowlerId;
  // const needsNewBatsman = !needsOpeners && (!inn.strikerId || !inn.nonStrikerId);
  // const needsNewBowler = !needsOpeners && !needsNewBatsman && !inn.currentBowlerId;
+
+
 
   if (needsOpeners) {
     return (
@@ -1371,11 +1482,31 @@ onClick={() => {
 
   const currentOver = inn.overHistory[inn.overHistory.length - 1] || [];
 
-  const handleWicketConfirm = () => {
-    recordBall({ runs: 0, wicket: { type: wicketType, batsmanOutId: inn.strikerId } });
-    setWicketFlow(false);
-    setWicketType("bowled");
-  };
+const handleWicketConfirm = () => {
+  const batsmanOutId =
+    wicketType === "runout"
+      ? runoutBatsman
+      : inn.strikerId;
+
+  const runs =
+    wicketType === "runout"
+      ? runoutRuns
+      : 0;
+
+recordBall({
+  runs,
+  wicket: {
+    type: wicketType,
+    batsmanOutId,
+    fielderId: wicketFielder,
+  },
+});
+
+  setWicketFlow(false);
+  setWicketType("bowled");
+  setRunoutRuns(0);
+  setRunoutBatsman(null);
+};
 
   return (
     <div>
@@ -1404,6 +1535,16 @@ onClick={() => {
           <span>CRR {crr}</span>
           {target != null && <span>Need {Math.max(runsNeeded, 0)} off {Math.max(ballsLeft, 0)} balls (RRR {reqRR})</span>}
         </div>
+      </div>
+
+            <div style={{ marginBottom: 14 }}>
+        <Button
+          variant="ghost"
+          full
+          onClick={() => setShowLiveScorecard(true)}
+        >
+          Scorecard
+        </Button>
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -1497,15 +1638,122 @@ onClick={() => {
         <Panel>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>How was {playerName(players, inn.strikerId)} out?</div>
           <div style={{ marginBottom: 10 }}>
-            {["bowled", "caught", "runout", "lbw", "stumped", "hitwicket"].map((t) => (
-              <Chip key={t} active={wicketType === t} onClick={() => setWicketType(t)}>
-                {{ bowled: "Bowled", caught: "Caught", runout: "Run out", lbw: "LBW", stumped: "Stumped", hitwicket: "Hit wicket" }[t]}
-              </Chip>
-            ))}
+{["bowled", "caught", "runout", "lbw", "stumped", "hitwicket"].map((t) => (
+  <Chip
+    key={t}
+    active={wicketType === t}
+onClick={() => {
+  setWicketType(t);
+  setWicketFielder(null);
+
+  if (t === "runout") {
+    setRunoutRuns(0);
+    setRunoutBatsman(inn.strikerId);
+  } else {
+    setRunoutBatsman(null);
+    setRunoutRuns(0);
+  }
+}}
+  >
+    {{ 
+      bowled: "Bowled",
+      caught: "Caught",
+      runout: "Run out",
+      lbw: "LBW",
+      stumped: "Stumped",
+      hitwicket: "Hit wicket"
+    }[t]}
+  </Chip>
+))}
+
+{wicketType === "runout" && (
+  <div style={{ marginTop: 12 }}>
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 7 }}>
+      Runs completed before run out
+    </div>
+
+       
+
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+      {[0, 1, 2, 3, 4].map((r) => (
+        <Chip
+          key={r}
+          active={runoutRuns === r}
+          onClick={() => setRunoutRuns(r)}
+        >
+          {r}
+        </Chip>
+      ))}
+    </div>
+
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 7 }}>
+      Who was run out?
+    </div>
+
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <Chip
+        active={runoutBatsman === inn.strikerId}
+        onClick={() => setRunoutBatsman(inn.strikerId)}
+      >
+        {playerName(players, inn.strikerId)} (Striker)
+      </Chip>
+
+      <Chip
+        active={runoutBatsman === inn.nonStrikerId}
+        onClick={() => setRunoutBatsman(inn.nonStrikerId)}
+      >
+        {playerName(players, inn.nonStrikerId)} (Non-striker)
+      </Chip>
+    </div>
+  </div>
+)}
+
+     {["caught", "runout", "stumped"].includes(wicketType) && (
+          <div style={{ marginBottom: 10 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: C.muted,
+                marginBottom: 6,
+              }}
+            >
+              {wicketType === "caught"
+                ? "Caught by"
+                : wicketType === "runout"
+                ? "Run out by"
+                : "Stumped by"}
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {bowlingTeamIds
+                .filter((pid) => pid !== inn.strikerId)
+                .map((pid) => (
+                  <Chip
+                    key={pid}
+                    active={wicketFielder === pid}
+                    onClick={() => setWicketFielder(pid)}
+                  >
+                    {playerName(players, pid)}
+                  </Chip>
+                ))}
+            </div>
+          </div>
+        )}
+
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Button variant="ghost" onClick={() => setWicketFlow(false)}>Cancel</Button>
-            <Button variant="primary" full onClick={handleWicketConfirm}>Confirm out</Button>
+            <Button
+  variant="primary"
+  full
+  disabled={
+    ["caught", "runout", "stumped"].includes(wicketType) &&
+    !wicketFielder
+  }
+  onClick={handleWicketConfirm}
+>
+  Confirm out
+</Button>
           </div>
         </Panel>
       )}
@@ -1629,6 +1877,42 @@ function HistoryTab({ matches, players, selectedMatchId, setSelectedMatchId }) {
   );
 }
 
+function dismissalText(b, players) {
+  const bowler = b.bowlerId
+    ? playerName(players, b.bowlerId)
+    : "—";
+
+  const fielder = b.fielderId
+    ? playerName(players, b.fielderId)
+    : "—";
+
+  if (b.howOut === "caught") {
+    return `c ${fielder} b ${bowler}`;
+  }
+
+  if (b.howOut === "runout") {
+    return `run out ${fielder}`;
+  }
+
+  if (b.howOut === "stumped") {
+    return `st ${fielder} b ${bowler}`;
+  }
+
+  if (b.howOut === "bowled") {
+    return `b ${bowler}`;
+  }
+
+  if (b.howOut === "lbw") {
+    return `lbw b ${bowler}`;
+  }
+
+  if (b.howOut === "hitwicket") {
+    return `hit wicket b ${bowler}`;
+  }
+
+  return b.howOut || "";
+}
+
 function Scorecard({ match, players, onBack }) {
   return (
     <div>
@@ -1657,37 +1941,247 @@ function Scorecard({ match, players, onBack }) {
               </ScoreDigits>
               <span style={{ fontSize: 12, color: C.muted }}>{formatOvers(inn.legalBalls)} ov</span>
             </div>
-            <div style={{ fontSize: 11.5, color: C.muted, display: "grid", gridTemplateColumns: "1fr 40px 40px 40px 40px", gap: 4, marginBottom: 4 }}>
-              <span>Batter</span><span>R</span><span>B</span><span>4s</span><span>6s</span>
-            </div>
+<div
+  style={{
+    fontSize: 11.5,
+    color: C.muted,
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
+    gap: 4,
+    marginBottom: 4,
+  }}
+>
+  <span>Batter</span>
+  <span>R</span>
+  <span>B</span>
+  <span>4s</span>
+  <span>6s</span>
+  <span>SR</span>
+</div>
             {Object.entries(inn.batsmen).map(([pid, b]) => (
-              <div key={pid} style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr 40px 40px 40px 40px", gap: 4, padding: "3px 0" }}>
-                <span>
-                  {playerName(players, pid)}
-                  {!b.out && <span style={{ color: C.green }}> *</span>}
-                  {b.out && <span style={{ color: C.muted, fontSize: 10.5 }}> ({b.howOut})</span>}
-                </span>
+              <div
+  key={pid}
+  style={{
+    fontSize: 13,
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
+    gap: 4,
+    padding: "3px 0",
+  }}
+>
+<span style={{ display: "flex", flexDirection: "column" }}>
+  <span>
+    {playerName(players, pid)}
+    {!b.out && <span style={{ color: C.green }}> *</span>}
+  </span>
+
+  {b.out && (
+    <span
+      style={{
+        color: C.muted,
+        fontSize: 10.5,
+        marginTop: 2,
+      }}
+    >
+      {dismissalText(b, players)}
+    </span>
+  )}
+</span>
                 <span>{b.runs}</span>
                 <span>{b.balls}</span>
                 <span>{b.fours}</span>
                 <span>{b.sixes}</span>
+                <span>
+  {b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(2) : "0.00"}
+</span>
               </div>
             ))}
             <div style={{ fontSize: 12, color: C.muted, padding: "6px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
-              Extras: {inn.extras || 0}
+              <div
+  style={{
+    fontSize: 12,
+    color: C.muted,
+    padding: "8px 0",
+    borderTop: `1px solid ${C.border}`,
+    marginTop: 4,
+  }}
+>
+  <div style={{ marginBottom: 5 }}>
+    Extras: {inn.extras || 0}
+  </div>
+
+  {inn.extrasBreakdown && (
+    <div style={{ fontSize: 11.5 }}>
+      Wd: {inn.extrasBreakdown.wides || 0}
+      {"  ·  "}
+      Nb: {inn.extrasBreakdown.noBalls || 0}
+      {"  ·  "}
+      B: {inn.extrasBreakdown.byes || 0}
+      {"  ·  "}
+      LB: {inn.extrasBreakdown.legByes || 0}
+    </div>
+  )}
+</div>
             </div>
 
-            <div style={{ fontSize: 11.5, color: C.muted, display: "grid", gridTemplateColumns: "1fr 40px 40px 40px", gap: 4, marginTop: 12, marginBottom: 4 }}>
-              <span>Bowler</span><span>O</span><span>R</span><span>W</span>
-            </div>
+<div
+  style={{
+    fontSize: 11.5,
+    color: C.muted,
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 40px 40px 55px",
+    gap: 4,
+    marginTop: 12,
+    marginBottom: 4,
+  }}
+>
+  <span>Bowler</span>
+  <span>O</span>
+  <span>R</span>
+  <span>W</span>
+  <span>Econ</span>
+</div>
             {Object.entries(inn.bowlers).map(([pid, bw]) => (
-              <div key={pid} style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr 40px 40px 40px", gap: 4, padding: "3px 0" }}>
-                <span>{playerName(players, pid)}</span>
-                <span>{formatOvers(bw.legalBalls)}</span>
-                <span>{bw.runs}</span>
-                <span>{bw.wickets}</span>
-              </div>
+<div
+  key={pid}
+  style={{
+    fontSize: 13,
+    display: "grid",
+    gridTemplateColumns: "1fr 40px 40px 40px 55px",
+    gap: 4,
+    padding: "3px 0",
+  }}
+>
+  <span>{playerName(players, pid)}</span>
+  <span>{formatOvers(bw.legalBalls)}</span>
+  <span>{bw.runs}</span>
+  <span>{bw.wickets}</span>
+  <span>
+    {bw.legalBalls > 0
+      ? (bw.runs / (bw.legalBalls / 6)).toFixed(2)
+      : "0.00"}
+  </span>
+</div>
             ))}
+
+{inn.fallOfWickets && inn.fallOfWickets.length > 0 && (
+  <div
+    style={{
+      marginTop: 14,
+      paddingTop: 10,
+      borderTop: `1px solid ${C.border}`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 12,
+        color: C.muted,
+        marginBottom: 8,
+      }}
+    >
+      Fall of Wickets
+    </div>
+
+    {inn.fallOfWickets.map((fow) => (
+      <div
+        key={fow.wicketNumber}
+        style={{
+          fontSize: 12.5,
+          padding: "3px 0",
+        }}
+      >
+        {fow.wicketNumber}-{fow.score} (
+        {playerName(players, fow.batsmanId)},{" "}
+        {formatOvers(fow.legalBalls)} ov)
+      </div>
+    ))}
+  </div>
+)}
+
+
+{inn.overHistory && inn.overHistory.some((over) => over.length > 0) && (
+  <div
+    style={{
+      marginTop: 14,
+      paddingTop: 10,
+      borderTop: `1px solid ${C.border}`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 12,
+        color: C.muted,
+        marginBottom: 8,
+      }}
+    >
+      Overs
+    </div>
+
+{inn.overHistory.map((over, overIndex) => {
+  if (!over.length) return null;
+
+  const overRuns = over.reduce((total, ball) => {
+    if (ball === "W") return total;
+
+    if (ball.startsWith("Wd")) {
+      if (ball === "Wd") return total + 1;
+      return total + 1 + Number(ball.split("+")[1] || 0);
+    }
+
+    if (ball.startsWith("Nb")) {
+      if (ball === "Nb") return total + 1;
+      return total + 1 + Number(ball.split("+")[1] || 0);
+    }
+
+    if (ball.startsWith("B")) {
+      return total + Number(ball.slice(1) || 0);
+    }
+
+    if (ball.startsWith("Lb")) {
+      return total + Number(ball.slice(2) || 0);
+    }
+
+    if (ball.includes("+W")) {
+      return total + Number(ball.split("+")[0] || 0);
+    }
+
+    return total + Number(ball || 0);
+  }, 0);
+
+  return (
+    <div
+      key={overIndex}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 12.5,
+        padding: "4px 0",
+      }}
+    >
+      <span style={{ width: 48, color: C.muted }}>
+        Over {overIndex + 1}
+      </span>
+
+      <span style={{ flex: 1 }}>
+        {over.join("  ")}
+      </span>
+
+      <span
+        style={{
+          width: 35,
+          textAlign: "right",
+          fontWeight: 700,
+        }}
+      >
+        {overRuns}
+      </span>
+    </div>
+  );
+})}
+  </div>
+)}
+
           </Panel>
         );
       })}
