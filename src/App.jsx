@@ -11,6 +11,10 @@ import React, { useState, useEffect, useCallback } from "react";
    - Layout: phone-frame, single column, bottom tab bar
 --------------------------------------------------------- */
 
+// ============================================================
+// 01. THEME CONFIGURATION
+// ============================================================
+
 const THEMES = {
   dark: {
     bg: "#1C2023",
@@ -46,6 +50,10 @@ const THEMES = {
 // Current theme — initially Dark
 let C = THEMES.dark;
 
+// ============================================================
+// 02. GENERIC HELPERS
+// ============================================================
+
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 function formatOvers(legalBalls) {
@@ -54,6 +62,9 @@ function formatOvers(legalBalls) {
   return `${o}.${b}`;
 }
 
+// ------------------------------------------------------------
+// Match innings data structure
+// ------------------------------------------------------------
 function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
   return {
     battingTeam,
@@ -83,6 +94,9 @@ function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
   };
 }
 
+// ------------------------------------------------------------
+// Match object creation
+// ------------------------------------------------------------
 function newMatchObj({
   teamAName,
   teamBName,
@@ -101,7 +115,10 @@ function newMatchObj({
   const bowlingFirst = battingFirst === "A" ? "B" : "A";
   return {
     id: uid(),
-    date: new Date().toISOString(),teamAPlayers,
+    date: new Date().toISOString(),
+    teamAName,
+    teamBName,
+    teamAPlayers,
 teamBPlayers,
 overs,
 tossWinner,
@@ -117,9 +134,16 @@ status: "live",
   };
 }
 
+// ------------------------------------------------------------
+// Team / player helpers
+// ------------------------------------------------------------
 function teamPlayersFor(match, teamKey) {
   return teamKey === "A" ? match.teamAPlayers : match.teamBPlayers;
 }
+
+// ============================================================
+// 03. CAREER STATISTICS
+// ============================================================
 
 /* Compute career stats for every player from completed matches */
 function computeCareerStats(players, matches) {
@@ -181,6 +205,10 @@ function computeCareerStats(players, matches) {
     });
   return stats;
 }
+
+// ============================================================
+// 04. REUSABLE UI COMPONENTS
+// ============================================================
 
 /* ---------------- Small UI primitives ---------------- */
 
@@ -294,9 +322,16 @@ function ScoreDigits({ children, size = 44, color = C.text }) {
   );
 }
 
+// ============================================================
+// 05. MAIN APP — STATE, STORAGE & MATCH LIFECYCLE
+// ============================================================
+
 /* ---------------- Main App ---------------- */
 
 export default function App() {
+  // ----------------------------------------------------------
+  // App-level state
+  // ----------------------------------------------------------
   const [tab, setTab] = useState("dashboard");
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -311,9 +346,13 @@ export default function App() {
 
 C = THEMES[theme];
   const [selectedMatchId, setSelectedMatchId] = useState(null);
+  const [completedMatch, setCompletedMatch] = useState(null);
   const [undoSnapshot, setUndoSnapshot] = useState(null);
   const [toast, setToast] = useState(null);
 
+  // ----------------------------------------------------------
+  // Load saved data from localStorage
+  // ----------------------------------------------------------
   useEffect(() => {
     (async () => {
       try {
@@ -331,6 +370,9 @@ if (lm) setLiveMatch(JSON.parse(lm));
     })();
   }, []);
 
+  // ----------------------------------------------------------
+  // UI feedback / toast
+  // ----------------------------------------------------------
   const flash = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 1800);
@@ -366,6 +408,9 @@ const persistLive = (next) => {
   }
 };
 
+  // ----------------------------------------------------------
+  // Player management
+  // ----------------------------------------------------------
   const addPlayer = (name) => {
     const trimmed = name.trim();
     if (!trimmed) return null;
@@ -376,6 +421,9 @@ const persistLive = (next) => {
     return p.id;
   };
 
+  // ----------------------------------------------------------
+  // Match lifecycle controls
+  // ----------------------------------------------------------
   const startMatch = (setup) => {
     const m = newMatchObj(setup);
     persistLive(m);
@@ -388,6 +436,9 @@ const persistLive = (next) => {
     setUndoSnapshot(null);
   };
 
+  // ==========================================================
+  // CORE CRICKET SCORING LOGIC
+  // ==========================================================
   /* ---- core ball recording ---- */
   const recordBall = (opts) => {
     // opts: { runs (bat runs), extra: null|'wide'|'noball'|'bye'|'legbye', wicket: null|{type} , extraRuns (additional run beyond the 1 for wide/noball) }
@@ -632,6 +683,7 @@ if (overBowler) {
     if (matchDone) {
       persistMatches([nextMatch, ...matches]);
       persistLive(null);
+      setCompletedMatch(nextMatch);
       setSelectedMatchId(nextMatch.id);
       flash(nextMatch.result);
     } else {
@@ -639,12 +691,18 @@ if (overBowler) {
     }
   };
 
+  // ----------------------------------------------------------
+  // Undo last delivery
+  // ----------------------------------------------------------
   const undoLastBall = () => {
     if (!undoSnapshot) return;
     persistLive(undoSnapshot);
     setUndoSnapshot(null);
   };
 
+  // ----------------------------------------------------------
+  // Innings setup / player selection
+  // ----------------------------------------------------------
   const setOpeners = (strikerId, nonStrikerId, bowlerId) => {
     if (!liveMatch) return;
     const nextMatch = JSON.parse(JSON.stringify(liveMatch));
@@ -730,6 +788,9 @@ const setNextBatsman = (batsmanId) => {
   persistLive(nextMatch);
 };
 
+  // ----------------------------------------------------------
+  // Derived statistics
+  // ----------------------------------------------------------
   const careerStats = computeCareerStats(players, matches);
 
   if (!ready) {
@@ -783,6 +844,8 @@ const setNextBatsman = (batsmanId) => {
           {tab === "match" && (
             <MatchTab
               liveMatch={liveMatch}
+              completedMatch={completedMatch}
+              setCompletedMatch={setCompletedMatch}
               players={players}
               addPlayer={addPlayer}
               startMatch={startMatch}
@@ -829,6 +892,10 @@ const setNextBatsman = (batsmanId) => {
     </div>
   );
 }
+
+// ============================================================
+// 06. HEADER & BOTTOM NAVIGATION
+// ============================================================
 
 /* ---------------- Header + Nav ---------------- */
 
@@ -934,6 +1001,10 @@ function BottomNav({ tab, setTab, liveActive }) {
   );
 }
 
+// ============================================================
+// 07. DASHBOARD
+// ============================================================
+
 /* ---------------- Dashboard ---------------- */
 
 function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHistory }) {
@@ -1017,6 +1088,10 @@ function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHi
   );
 }
 
+// ============================================================
+// 08. PLAYERS & CAREER STATS UI
+// ============================================================
+
 /* ---------------- Players ---------------- */
 
 function PlayersTab({ players, careerStats, addPlayer }) {
@@ -1096,14 +1171,92 @@ function StatMini({ label, value }) {
   );
 }
 
+// ============================================================
+// 09. MATCH TAB & MATCH SETUP
+// ============================================================
+
 /* ---------------- Match tab ---------------- */
 
 function MatchTab(props) {
-  const { liveMatch } = props;
+  const { liveMatch, completedMatch } = props;
+  const [showCompletedScorecard, setShowCompletedScorecard] = useState(false);
+  if (showCompletedScorecard && completedMatch) {
+  return (
+    <Scorecard
+      match={completedMatch}
+      players={props.players}
+      onBack={() => setShowCompletedScorecard(false)}
+    />
+  );
+}
+
+  if (!liveMatch && completedMatch) {
+    return (
+      <div>
+
+        <Panel>
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: 20,
+              fontWeight: 800,
+              marginBottom: 16,
+            }}
+          >
+            🏆 Match Completed
+          </div>
+
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: 14,
+              color: C.mustard,
+              fontWeight: 700,
+              marginBottom: 20,
+            }}
+          >
+            {completedMatch.result}
+          </div>
+
+          <div style={{ marginTop: 12, textAlign: "center" }}>
+  <Button
+    variant="primary"
+    onClick={() => setShowCompletedScorecard(true)}
+  >
+    View Scorecard
+  </Button>
+</div>
+
+          <div style={{ marginTop: 20, textAlign: "center" }}>
+  <Button
+    variant="primary"
+    onClick={() => props.setCompletedMatch(null)}
+  >
+    New Match
+  </Button>
+</div>
+
+          <div
+            style={{
+              textAlign: "center",
+              color: C.muted,
+              fontSize: 13,
+            }}
+          >
+            {completedMatch.teamAName} vs {completedMatch.teamBName}
+          </div>
+        </Panel>
+      </div>
+    );
+  }
+
   if (!liveMatch) return <MatchSetup {...props} />;
   return <LiveScoring {...props} />;
 }
 
+// ------------------------------------------------------------
+// Match setup: teams, squads, captains, vice captains & toss
+// ------------------------------------------------------------
 function MatchSetup({ players, addPlayer, startMatch }) {
   const [teamAName, setTeamAName] = useState("Team A");
   const [teamBName, setTeamBName] = useState("Team B");
@@ -1359,9 +1512,16 @@ const canStart =
   );
 }
 
+// ------------------------------------------------------------
+// Player display helper
+// ------------------------------------------------------------
 function playerName(players, id) {
   return players.find((p) => p.id === id)?.name || "—";
 }
+
+// ============================================================
+// 10. LIVE SCORING
+// ============================================================
 
 function LiveScoring({ liveMatch, players, recordBall, undoLastBall, canUndo, setOpeners, setNextBowler, setNextBatsman, setBatsmenPositions, cancelLiveMatch }) {
   const idx = liveMatch.currentInningsIdx;
@@ -2230,6 +2390,9 @@ onClick={() => {
   );
 }
 
+// ------------------------------------------------------------
+// Scorecard: batting row
+// ------------------------------------------------------------
 function BatsmanRow({ name, stats, onStrike }) {
   if (!stats) return null;
   return (
@@ -2245,6 +2408,9 @@ function BatsmanRow({ name, stats, onStrike }) {
   );
 }
 
+// ------------------------------------------------------------
+// Scorecard / innings setup: opener selection
+// ------------------------------------------------------------
 function OpenersForm({ battingTeamIds, bowlingTeamIds, players, battingTeamName, bowlingTeamName, onSubmit, innNum, target }) {
   const [striker, setStriker] = useState(null);
   const [nonStriker, setNonStriker] = useState(null);
@@ -2294,8 +2460,15 @@ function OpenersForm({ battingTeamIds, bowlingTeamIds, players, battingTeamName,
   );
 }
 
+// ============================================================
+// 11. HISTORY & COMPLETED MATCHES
+// ============================================================
+
 /* ---------------- History ---------------- */
 
+// ------------------------------------------------------------
+// Match history list and completed scorecards
+// ------------------------------------------------------------
 function HistoryTab({ matches, players, selectedMatchId, setSelectedMatchId }) {
   const completed = matches.filter((m) => m.status === "completed");
   const selected = completed.find((m) => m.id === selectedMatchId);
@@ -2325,6 +2498,9 @@ function HistoryTab({ matches, players, selectedMatchId, setSelectedMatchId }) {
   );
 }
 
+// ------------------------------------------------------------
+// Dismissal display text
+// ------------------------------------------------------------
 function dismissalText(b, players) {
   const bowler = b.bowlerId
     ? playerName(players, b.bowlerId)
@@ -2360,6 +2536,10 @@ function dismissalText(b, players) {
 
   return b.howOut || "";
 }
+
+// ============================================================
+// 12. SCORECARD
+// ============================================================
 
 function Scorecard({ match, players, onBack }) {
   return (

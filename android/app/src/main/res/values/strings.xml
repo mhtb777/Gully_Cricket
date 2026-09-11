@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gully Cricket</string>
+    <string name="title_activity_main">Gully Cricket</string>
+    <string name="package_name">com.gullycricket.app</string>
+    <string name="custom_url_scheme">com.gullycricket.app</string>
+</resources>
