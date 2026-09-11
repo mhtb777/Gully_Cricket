@@ -11,20 +11,40 @@ import React, { useState, useEffect, useCallback } from "react";
    - Layout: phone-frame, single column, bottom tab bar
 --------------------------------------------------------- */
 
-const C = {
-  bg: "#1C2023",
-  panel: "#262B2F",
-  panelLight: "#2F3539",
-  panelLighter: "#363C41",
-  text: "#F1EDE3",
-  muted: "#9AA0A6",
-  border: "#3A4046",
-  red: "#C4432B",
-  redDark: "#9E3423",
-  green: "#4C8C5B",
-  greenDark: "#3B6E48",
-  mustard: "#E3A93E",
+const THEMES = {
+  dark: {
+    bg: "#1C2023",
+    panel: "#262B2F",
+    panelLight: "#2F3539",
+    panelLighter: "#363C41",
+    text: "#F1EDE3",
+    muted: "#9AA0A6",
+    border: "#3A4046",
+    red: "#C4432B",
+    redDark: "#9E3423",
+    green: "#4C8C5B",
+    greenDark: "#3B6E48",
+    mustard: "#E3A93E",
+  },
+
+  light: {
+    bg: "#F7F7F5",
+    panel: "#FFFFFF",
+    panelLight: "#F0F1F2",
+    panelLighter: "#E6E7E8",
+    text: "#1C2023",
+    muted: "#6B7280",
+    border: "#D5D7DA",
+    red: "#C4432B",
+    redDark: "#9E3423",
+    green: "#3F7D4A",
+    greenDark: "#32643B",
+    mustard: "#D99522",
+  },
 };
+
+// Current theme — initially Dark
+let C = THEMES.dark;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -63,21 +83,34 @@ function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
   };
 }
 
-function newMatchObj({ teamAName, teamBName, teamAPlayers, teamBPlayers, overs, tossWinner, tossDecision }) {
+function newMatchObj({
+  teamAName,
+  teamBName,
+  teamAPlayers,
+  teamBPlayers,
+  overs,
+  tossWinner,
+  tossDecision,
+  teamACaptain,
+  teamAViceCaptain,
+  teamBCaptain,
+  teamBViceCaptain
+}) {
   const battingFirst =
     (tossWinner === "A" && tossDecision === "bat") || (tossWinner === "B" && tossDecision === "bowl") ? "A" : "B";
   const bowlingFirst = battingFirst === "A" ? "B" : "A";
   return {
     id: uid(),
-    date: new Date().toISOString(),
-    teamAName,
-    teamBName,
-    teamAPlayers,
-    teamBPlayers,
-    overs,
-    tossWinner,
-    tossDecision,
-    status: "live",
+    date: new Date().toISOString(),teamAPlayers,
+teamBPlayers,
+overs,
+tossWinner,
+tossDecision,
+teamACaptain,
+teamAViceCaptain,
+teamBCaptain,
+teamBViceCaptain,
+status: "live",
     currentInningsIdx: 0,
     innings: [emptyInnings(battingFirst, bowlingFirst, overs, null)],
     result: null,
@@ -269,6 +302,14 @@ export default function App() {
   const [matches, setMatches] = useState([]);
   const [liveMatch, setLiveMatch] = useState(null);
   const [ready, setReady] = useState(false);
+  const [theme, setTheme] = useState(() => {
+  return localStorage.getItem("gully-theme") || "dark";
+});
+  useEffect(() => {
+    localStorage.setItem("gully-theme", theme);
+  }, [theme]);
+
+C = THEMES[theme];
   const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [undoSnapshot, setUndoSnapshot] = useState(null);
   const [toast, setToast] = useState(null);
@@ -404,14 +445,17 @@ const persistLive = (next) => {
       inn.batsmen[striker].balls += 1;
     }
 
-    if (bowlerId) {
-      const bw = inn.bowlers[bowlerId];
-      // byes/leg-byes are extras, not charged against the bowler
-      if (extra !== "bye" && extra !== "legbye") {
-        bw.runs += runsToTeam;
-      }
-      if (isLegalBall) bw.legalBalls += 1;
-    }
+if (bowlerId) {
+  const bw = inn.bowlers[bowlerId];
+
+  // byes/leg-byes are extras, not charged against the bowler
+  if (extra !== "bye" && extra !== "legbye") {
+    bw.runs += runsToTeam;
+    bw.overRuns = (bw.overRuns || 0) + runsToTeam;
+  }
+
+  if (isLegalBall) bw.legalBalls += 1;
+}
 
     if (isLegalBall) inn.legalBalls += 1;
     // Extras total + category-wise breakdown
@@ -494,6 +538,15 @@ if (!wicket) {
     // end of over
     let awaitingBowler = false;
     if (isLegalBall && inn.legalBalls % 6 === 0 && inn.legalBalls > 0) {
+      const overBowler = inn.bowlers[inn.currentBowlerId];
+
+if (overBowler && (overBowler.overRuns || 0) === 0) {
+  overBowler.maidens = (overBowler.maidens || 0) + 1;
+}
+
+if (overBowler) {
+  overBowler.overRuns = 0;
+}
       inn.lastOverBowlerId = inn.currentBowlerId;
       inn.currentBowlerId = null;
       inn.overHistory.push([]);
@@ -604,7 +657,14 @@ if (!wicket) {
     [strikerId, nonStrikerId].forEach((pid) => {
       if (!inn.batsmen[pid]) inn.batsmen[pid] = { runs: 0, balls: 0, fours: 0, sixes: 0, out: false, howOut: null };
     });
-    if (!inn.bowlers[bowlerId]) inn.bowlers[bowlerId] = { legalBalls: 0, runs: 0, wickets: 0 };
+    if (!inn.bowlers[bowlerId]) {
+  inn.bowlers[bowlerId] = {
+    legalBalls: 0,
+    runs: 0,
+    wickets: 0,
+    maidens: 0
+  };
+}
     persistLive(nextMatch);
   };
 
@@ -614,7 +674,14 @@ if (!wicket) {
     const idx = nextMatch.currentInningsIdx;
     const inn = nextMatch.innings[idx];
     inn.currentBowlerId = bowlerId;
-    if (!inn.bowlers[bowlerId]) inn.bowlers[bowlerId] = { legalBalls: 0, runs: 0, wickets: 0 };
+    if (!inn.bowlers[bowlerId]) {
+  inn.bowlers[bowlerId] = {
+    legalBalls: 0,
+    runs: 0,
+    wickets: 0,
+    maidens: 0
+  };
+}
     persistLive(nextMatch);
   };
 
@@ -692,7 +759,12 @@ const setNextBatsman = (batsmanId) => {
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius:4px; }
       `}</style>
       <div style={{ width: "100%", maxWidth: 480, minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
-        <Header liveMatch={liveMatch} tab={tab} />
+        <Header
+  liveMatch={liveMatch}
+  tab={tab}
+  theme={theme}
+  setTheme={setTheme}
+/>
         <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 90px 14px" }}>
           {tab === "dashboard" && (
             <Dashboard
@@ -760,7 +832,7 @@ const setNextBatsman = (batsmanId) => {
 
 /* ---------------- Header + Nav ---------------- */
 
-function Header({ liveMatch, tab }) {
+function Header({ liveMatch, tab, theme, setTheme }) {
   const titles = { dashboard: "Dashboard", players: "Players", match: "Match", history: "History" };
   return (
     <div
@@ -788,6 +860,21 @@ function Header({ liveMatch, tab }) {
           </span>
         )}
         <span>{titles[tab]}</span>
+        <button
+  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+  style={{
+    marginLeft: 8,
+    padding: "5px 9px",
+    borderRadius: 8,
+    border: `1px solid ${C.border}`,
+    background: C.panel,
+    color: C.text,
+    fontSize: 12,
+    cursor: "pointer",
+  }}
+>
+  {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+</button>
       </div>
     </div>
   );
@@ -1023,6 +1110,11 @@ function MatchSetup({ players, addPlayer, startMatch }) {
   const [teamAPlayers, setTeamAPlayers] = useState([]);
   const [teamBPlayers, setTeamBPlayers] = useState([]);
   const [overs, setOvers] = useState(6);
+  const [teamACaptain, setTeamACaptain] = useState("");
+  const [teamAViceCaptain, setTeamAViceCaptain] = useState("");
+
+  const [teamBCaptain, setTeamBCaptain] = useState("");
+  const [teamBViceCaptain, setTeamBViceCaptain] = useState("");
   const [tossWinner, setTossWinner] = useState("A");
   const [tossDecision, setTossDecision] = useState("bat");
   const [newPlayerName, setNewPlayerName] = useState("");
@@ -1031,8 +1123,14 @@ function MatchSetup({ players, addPlayer, startMatch }) {
     setFn(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   };
 
-  const canStart =
-    teamAName.trim() && teamBName.trim() && teamAPlayers.length >= 2 && teamBPlayers.length >= 2 && overs > 0;
+const canStart =
+  teamAName.trim() &&
+  teamBName.trim() &&
+  teamAPlayers.length >= 2 &&
+  teamBPlayers.length >= 2 &&
+  overs > 0 &&
+  teamACaptain &&
+  teamBCaptain;
 
   return (
     <div>
@@ -1078,6 +1176,63 @@ function MatchSetup({ players, addPlayer, startMatch }) {
           ))}
         </div>
 
+        
+
+        <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+    marginTop: 12,
+  }}
+>
+  <Field label="Captain *">
+    <select
+      style={inputStyle}
+      value={teamACaptain}
+      onChange={(e) => {
+        setTeamACaptain(e.target.value);
+
+        if (teamAViceCaptain === e.target.value) {
+          setTeamAViceCaptain("");
+        }
+      }}
+    >
+      <option value="">Select Captain</option>
+
+      {players
+        .filter((p) => teamAPlayers.includes(p.id))
+        .map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+    </select>
+  </Field>
+
+  <Field label="Vice Captain">
+    <select
+      style={inputStyle}
+      value={teamAViceCaptain}
+      onChange={(e) => setTeamAViceCaptain(e.target.value)}
+    >
+      <option value="">Select VC</option>
+
+      {players
+        .filter(
+          (p) =>
+            teamAPlayers.includes(p.id) &&
+            p.id !== teamACaptain
+        )
+        .map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+    </select>
+  </Field>
+</div>
+
         <Field label="Team B name">
           <input style={inputStyle} value={teamBName} onChange={(e) => setTeamBName(e.target.value)} />
         </Field>
@@ -1091,6 +1246,62 @@ function MatchSetup({ players, addPlayer, startMatch }) {
               </Chip>
             ))}
         </div>
+
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+    marginTop: 12,
+  }}
+>
+  <Field label="Captain *">
+    <select
+      style={inputStyle}
+      value={teamBCaptain}
+      onChange={(e) => {
+        setTeamBCaptain(e.target.value);
+
+        if (teamBViceCaptain === e.target.value) {
+          setTeamBViceCaptain("");
+        }
+      }}
+    >
+      <option value="">Select Captain</option>
+
+      {players
+        .filter((p) => teamBPlayers.includes(p.id))
+        .map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+    </select>
+  </Field>
+
+  <Field label="Vice Captain">
+    <select
+      style={inputStyle}
+      value={teamBViceCaptain}
+      onChange={(e) => setTeamBViceCaptain(e.target.value)}
+    >
+      <option value="">Select VC</option>
+
+      {players
+        .filter(
+          (p) =>
+            teamBPlayers.includes(p.id) &&
+            p.id !== teamBCaptain
+        )
+        .map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+    </select>
+  </Field>
+</div>
+
       </Panel>
 
       <Panel style={{ marginBottom: 14 }}>
@@ -1122,14 +1333,26 @@ function MatchSetup({ players, addPlayer, startMatch }) {
         full
         disabled={!canStart}
         onClick={() =>
-          startMatch({ teamAName, teamBName, teamAPlayers, teamBPlayers, overs, tossWinner, tossDecision })
+          startMatch({
+  teamAName,
+  teamBName,
+  teamAPlayers,
+  teamBPlayers,
+  overs,
+  tossWinner,
+  tossDecision,
+  teamACaptain,
+  teamAViceCaptain,
+  teamBCaptain,
+  teamBViceCaptain
+})
         }
       >
         Start match
       </Button>
       {!canStart && (
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8, textAlign: "center" }}>
-          Pick at least 2 players per team to continue.
+          Select at least 2 players per team and choose a captain for both teams.
         </div>
       )}
     </div>
@@ -1156,6 +1379,8 @@ const [runoutRuns, setRunoutRuns] = useState(0);
 const [runoutBatsman, setRunoutBatsman] = useState(null);
 const [confirmCancel, setConfirmCancel] = useState(false);
 const [showLiveScorecard, setShowLiveScorecard] = useState(false);
+const [showMatchInfo, setShowMatchInfo] = useState(false);
+const [showSquads, setShowSquads] = useState(false);
 
 
 
@@ -1168,6 +1393,195 @@ const [showLiveScorecard, setShowLiveScorecard] = useState(false);
   setManualStriker(inn.strikerId);
   setManualNonStriker(inn.nonStrikerId);
 }, [inn.strikerId, inn.nonStrikerId]);
+
+if (showSquads) {
+  const teamAPlayers = liveMatch.teamAPlayers || [];
+  const teamBPlayers = liveMatch.teamBPlayers || [];
+
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        onClick={() => setShowSquads(false)}
+        style={{ marginBottom: 12 }}
+      >
+        ← Back to scoring
+      </Button>
+
+      <Panel style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            textAlign: "center",
+            marginBottom: 18,
+          }}
+        >
+          Squads
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+          }}
+        >
+          {/* Team A */}
+          <div>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 14,
+                textAlign: "center",
+                color: C.mustard,
+                marginBottom: 10,
+              }}
+            >
+              {liveMatch.teamAName}
+            </div>
+
+            {teamAPlayers.map((pid, index) => (
+              <div
+                key={pid}
+                style={{
+                  padding: "8px 6px",
+                  borderBottom: `1px solid ${C.border}`,
+                  fontSize: 13,
+                }}
+              >
+                {index + 1}. {playerName(players, pid)}
+{pid === liveMatch.teamACaptain && (
+  <span style={{ color: C.mustard }}> (c)</span>
+)}
+{pid === liveMatch.teamAViceCaptain && (
+  <span style={{ color: C.muted }}> (vc)</span>
+)}
+              </div>
+            ))}
+          </div>
+
+          {/* Team B */}
+          <div>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 14,
+                textAlign: "center",
+                color: C.mustard,
+                marginBottom: 10,
+              }}
+            >
+              {liveMatch.teamBName}
+            </div>
+
+            {teamBPlayers.map((pid, index) => (
+              <div
+                key={pid}
+                style={{
+                  padding: "8px 6px",
+                  borderBottom: `1px solid ${C.border}`,
+                  fontSize: 13,
+                }}
+              >
+               {index + 1}. {playerName(players, pid)}
+{pid === liveMatch.teamBCaptain && (
+  <span style={{ color: C.mustard }}> (c)</span>
+)}
+{pid === liveMatch.teamBViceCaptain && (
+  <span style={{ color: C.muted }}> (vc)</span>
+)}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+if (showMatchInfo) {
+  const matchDate = new Date(liveMatch?.date);
+
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        onClick={() => setShowMatchInfo(false)}
+        style={{ marginBottom: 12 }}
+      >
+        ← Back to scoring
+      </Button>
+
+      <Panel>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            marginBottom: 16,
+          }}
+        >
+          Match Info
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Teams
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 3 }}>
+              {liveMatch?.teamAName} vs {liveMatch?.teamBName}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Date
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 3 }}>
+              {matchDate.toLocaleDateString()}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Start Time
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 3 }}>
+              {matchDate.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Venue
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 3 }}>
+              Not available
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Toss
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 3 }}>
+              Not available
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
 
 if (showLiveScorecard) {
   return (
@@ -1537,15 +1951,49 @@ recordBall({
         </div>
       </div>
 
-            <div style={{ marginBottom: 14 }}>
-        <Button
-          variant="ghost"
-          full
-          onClick={() => setShowLiveScorecard(true)}
-        >
-          Scorecard
-        </Button>
-      </div>
+<div
+  style={{
+    marginBottom: 14,
+    display: "flex",
+    gap: 8,
+  }}
+>
+  <Button
+    variant="ghost"
+    onClick={() => setShowLiveScorecard(true)}
+    style={{
+      flex: 1,
+      minWidth: 0,
+    }}
+  >
+    Scorecard
+  </Button>
+
+  <Button
+    variant="ghost"
+    onClick={() => setShowMatchInfo(true)}
+    style={{
+      width: 48,
+      padding: 0,
+      flexShrink: 0,
+    }}
+  >
+    ⓘ
+  </Button>
+
+  <Button
+    variant="ghost"
+    onClick={() => setShowSquads(true)}
+    style={{
+      width: 72,
+      padding: 0,
+      flexShrink: 0,
+    }}
+  >
+    👥 Squad
+  </Button>
+</div>
+
 
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <Panel style={{ flex: 1 }}>
@@ -1951,12 +2399,12 @@ function Scorecard({ match, players, onBack }) {
     marginBottom: 4,
   }}
 >
-  <span>Batter</span>
-  <span>R</span>
-  <span>B</span>
-  <span>4s</span>
-  <span>6s</span>
-  <span>SR</span>
+<span>Batter</span>
+<span style={{ textAlign: "right" }}>R</span>
+<span style={{ textAlign: "right" }}>B</span>
+<span style={{ textAlign: "right" }}>4s</span>
+<span style={{ textAlign: "right" }}>6s</span>
+<span style={{ textAlign: "right" }}>SR</span>
 </div>
             {Object.entries(inn.batsmen).map(([pid, b]) => (
               <div
@@ -1970,10 +2418,21 @@ function Scorecard({ match, players, onBack }) {
   }}
 >
 <span style={{ display: "flex", flexDirection: "column" }}>
-  <span>
-    {playerName(players, pid)}
-    {!b.out && <span style={{ color: C.green }}> *</span>}
-  </span>
+<span>
+  {playerName(players, pid)}
+
+  {(pid === match.teamACaptain || pid === match.teamBCaptain) && (
+    <span style={{ color: C.mustard }}> (c)</span>
+  )}
+
+  {(pid === match.teamAViceCaptain || pid === match.teamBViceCaptain) && (
+    <span style={{ color: C.muted }}> (vc)</span>
+  )}
+
+  {!b.out && pid === inn.strikerId && (
+    <span style={{ color: C.green }}> *</span>
+  )}
+</span>
 
   {b.out && (
     <span
@@ -1987,12 +2446,14 @@ function Scorecard({ match, players, onBack }) {
     </span>
   )}
 </span>
-                <span>{b.runs}</span>
-                <span>{b.balls}</span>
-                <span>{b.fours}</span>
-                <span>{b.sixes}</span>
-                <span>
-  {b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(2) : "0.00"}
+<span style={{ textAlign: "right" }}>{b.runs}</span>
+<span style={{ textAlign: "right" }}>{b.balls}</span>
+<span style={{ textAlign: "right" }}>{b.fours}</span>
+<span style={{ textAlign: "right" }}>{b.sixes}</span>
+<span style={{ textAlign: "right" }}>
+  {b.balls > 0
+    ? ((b.runs / b.balls) * 100).toFixed(2)
+    : "0.00"}
 </span>
               </div>
             ))}
@@ -2029,7 +2490,7 @@ function Scorecard({ match, players, onBack }) {
     fontSize: 11.5,
     color: C.muted,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 55px",
+    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
     gap: 4,
     marginTop: 12,
     marginBottom: 4,
@@ -2037,6 +2498,7 @@ function Scorecard({ match, players, onBack }) {
 >
   <span>Bowler</span>
   <span>O</span>
+  <span>M</span>
   <span>R</span>
   <span>W</span>
   <span>Econ</span>
@@ -2047,20 +2509,26 @@ function Scorecard({ match, players, onBack }) {
   style={{
     fontSize: 13,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 55px",
+    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
     gap: 4,
     padding: "3px 0",
   }}
 >
-  <span>{playerName(players, pid)}</span>
-  <span>{formatOvers(bw.legalBalls)}</span>
-  <span>{bw.runs}</span>
-  <span>{bw.wickets}</span>
-  <span>
-    {bw.legalBalls > 0
-      ? (bw.runs / (bw.legalBalls / 6)).toFixed(2)
-      : "0.00"}
-  </span>
+<span>
+  {playerName(players, pid)}
+  {pid === inn.currentBowlerId && (
+    <span style={{ color: C.green }}> *</span>
+  )}
+</span>
+<span>{formatOvers(bw.legalBalls)}</span>
+<span>{bw.maidens || 0}</span>
+<span>{bw.runs}</span>
+<span>{bw.wickets}</span>
+<span>
+  {bw.legalBalls > 0
+    ? (bw.runs / (bw.legalBalls / 6)).toFixed(2)
+    : "0.00"}
+</span>
 </div>
             ))}
 
