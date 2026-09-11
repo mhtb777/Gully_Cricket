@@ -915,10 +915,38 @@ function Header({ liveMatch, tab, theme, setTheme }) {
         zIndex: 5,
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <ScoreDigits size={30} color={C.red}>Gully</ScoreDigits>
-        <ScoreDigits size={30}>Scores</ScoreDigits>
-      </div>
+<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+  <img
+    src="/logo.png"
+    alt="Gully Cricket Scorer"
+    style={{
+      width: 50,
+      height: 50,
+      objectFit: "contain",
+      borderRadius: 10,
+    }}
+  />
+
+
+<div
+  style={{
+    display: "flex",
+    alignItems: "center",
+  }}
+>
+  <img
+    src="/wordmark.png"
+    alt="Gully Cricket Scorer"
+    style={{
+      width: 160,
+      height: 58,
+      objectFit: "contain",
+      display: "block",
+    }}
+  />
+</div>
+
+</div>
       <div style={{ fontSize: 12.5, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
         {liveMatch && (
           <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.mustard, fontWeight: 700 }}>
@@ -926,7 +954,19 @@ function Header({ liveMatch, tab, theme, setTheme }) {
             LIVE
           </span>
         )}
-        <span>{titles[tab]}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+  <span style={{ fontSize: 15 }}>⌂</span>
+  {titles[tab]}
+</span>
+
+<span
+  style={{
+    width: 1,
+    height: 24,
+    background: C.border,
+    marginLeft: 8,
+  }}
+/>
         <button
   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
   style={{
