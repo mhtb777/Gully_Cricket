@@ -946,6 +946,8 @@ function Header({ liveMatch, tab, theme, setTheme }) {
   />
 </div>
 
+
+
 </div>
       <div style={{ fontSize: 12.5, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
         {liveMatch && (
@@ -1056,6 +1058,71 @@ function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHi
 
   return (
     <div>
+
+      {!liveMatch && (
+        <Panel
+          style={{
+            marginBottom: 14,
+            padding: 20,
+            cursor: "pointer",
+            background: `linear-gradient(135deg, ${C.panelLight}, ${C.panel})`,
+            border: `1px solid ${C.border}`,
+            position: "relative",
+            overflow: "hidden",
+          }}
+          onClick={goToMatch}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              color: C.mustard,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
+            🏏 Street Cricket
+          </div>
+
+          <div
+            style={{
+              fontSize: 24,
+              fontWeight: 900,
+              color: C.text,
+              lineHeight: 1.1,
+            }}
+          >
+            Ready to Score?
+          </div>
+
+          <div
+            style={{
+              fontSize: 13,
+              color: C.muted,
+              marginTop: 6,
+              marginBottom: 14,
+            }}
+          >
+            Start a new match and keep every run, wicket and over on record.
+          </div>
+
+          <div
+            style={{
+              display: "inline-block",
+              padding: "9px 15px",
+              borderRadius: 9,
+              background: C.red,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
+            Start New Match →
+          </div>
+        </Panel>
+      )}
+
       {liveMatch && (
         <Panel style={{ borderColor: C.mustard, marginBottom: 14, cursor: "pointer" }} onClick={goToMatch}>
           <div style={{ fontSize: 12, color: C.mustard, fontWeight: 700, marginBottom: 6 }}>Match in progress</div>
@@ -1074,18 +1141,42 @@ function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHi
         </Panel>
       )}
 
-      {(matches.length > 0 || liveMatch) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-          <Panel>
-            <ScoreDigits size={34}>{completed.length}</ScoreDigits>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>matches played</div>
-          </Panel>
-          <Panel>
-            <ScoreDigits size={34}>{players.length}</ScoreDigits>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>players in the squad</div>
-          </Panel>
-        </div>
-      )}
+{(matches.length > 0 || liveMatch) && (
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10,
+      marginBottom: 14,
+    }}
+  >
+    <Panel
+      style={{
+        textAlign: "center",
+        borderTop: `3px solid ${C.mustard}`,
+        padding: 16,
+      }}
+    >
+      <ScoreDigits size={34}>{completed.length}</ScoreDigits>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+        matches played
+      </div>
+    </Panel>
+
+    <Panel
+  style={{
+    textAlign: "center",
+    borderTop: `3px solid ${C.green}`,
+    padding: 16,
+  }}
+>
+      <ScoreDigits size={34}>{players.length}</ScoreDigits>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+        players in the squad
+      </div>
+    </Panel>
+  </div>
+)}
 
       {lastMatch && (
         <Panel style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => goToHistory(lastMatch.id)}>
