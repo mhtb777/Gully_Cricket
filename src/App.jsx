@@ -108,7 +108,8 @@ function newMatchObj({
   teamACaptain,
   teamAViceCaptain,
   teamBCaptain,
-  teamBViceCaptain
+  teamBViceCaptain,
+  scheduledMatchToStart,
 }) {
   const battingFirst =
     (tossWinner === "A" && tossDecision === "bat") || (tossWinner === "B" && tossDecision === "bowl") ? "A" : "B";
@@ -127,6 +128,8 @@ teamACaptain,
 teamAViceCaptain,
 teamBCaptain,
 teamBViceCaptain,
+tournamentId: scheduledMatchToStart?.tournamentId || null,
+scheduledMatchId: scheduledMatchToStart?.id || null,
 status: "live",
     currentInningsIdx: 0,
     innings: [emptyInnings(battingFirst, bowlingFirst, overs, null)],
@@ -328,6 +331,42 @@ function ScoreDigits({ children, size = 44, color = C.text }) {
 
 /* ---------------- Main App ---------------- */
 
+function CricketSplash() {
+  const batImg = new URL("./assets/bat.png", import.meta.url).href;
+  const ballImg = new URL("./assets/ball.png", import.meta.url).href;
+  const bgImg = new URL("./assets/splash-bg.jpg", import.meta.url).href;
+  const readyImg = new URL("./assets/ready-title.png", import.meta.url).href;
+
+  return (
+    <div className="cricket-splash">
+      <div
+        className="splash-stadium"
+        style={{ backgroundImage: `url(${bgImg})` }}
+      >
+        <img
+          src={batImg}
+          className="splash-bat"
+          alt=""
+        />
+
+        <img
+          src={ballImg}
+          className="splash-ball"
+
+          
+          alt=""
+        />
+
+        <img
+          src={readyImg}
+          className="splash-ready"
+          alt="READY TO PLAY!"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // ----------------------------------------------------------
   // App-level state
@@ -336,8 +375,11 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
   const [liveMatch, setLiveMatch] = useState(null);
+  const [tournaments, setTournaments] = useState([]);
+  const [scheduledMatchToStart, setScheduledMatchToStart] = useState(null);
   const [ready, setReady] = useState(false);
   const [theme, setTheme] = useState(() => {
+
   return localStorage.getItem("gully-theme") || "dark";
 });
   useEffect(() => {
@@ -350,6 +392,16 @@ C = THEMES[theme];
   const [undoSnapshot, setUndoSnapshot] = useState(null);
   const [toast, setToast] = useState(null);
 
+  const [showSplash, setShowSplash] = useState(true);
+
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setShowSplash(false);
+  }, 1800);
+
+  return () => clearTimeout(timer);
+}, []);
+
   // ----------------------------------------------------------
   // Load saved data from localStorage
   // ----------------------------------------------------------
@@ -359,10 +411,12 @@ C = THEMES[theme];
 const p = localStorage.getItem("players");
 const m = localStorage.getItem("matches");
 const lm = localStorage.getItem("live-match");
+const t = localStorage.getItem("tournaments");
 
 if (p) setPlayers(JSON.parse(p));
 if (m) setMatches(JSON.parse(m));
 if (lm) setLiveMatch(JSON.parse(lm));
+if (t) setTournaments(JSON.parse(t));
       } catch (e) {
         console.error("Load error", e);
       }
@@ -394,6 +448,39 @@ const persistMatches = async (next) => {
     console.error(e);
   }
 };
+
+const persistTournaments = async (next) => {
+  setTournaments(next);
+  try {
+    localStorage.setItem("tournaments", JSON.stringify(next));
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+const markScheduledMatchPlayed = (match) => {
+  if (!match?.tournamentId || !match?.scheduledMatchId) return;
+
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === match.tournamentId
+      ? {
+          ...tournament,
+          scheduledMatches: (tournament.scheduledMatches || []).map(
+            (scheduledMatch) =>
+              scheduledMatch.id === match.scheduledMatchId
+                ? {
+                    ...scheduledMatch,
+                    status: "played",
+                  }
+                : scheduledMatch
+          ),
+        }
+      : tournament
+  );
+
+  persistTournaments(updatedTournaments);
+};
+
 const persistLive = (next) => {
   setLiveMatch(next);
 
@@ -682,6 +769,7 @@ if (overBowler) {
 
     if (matchDone) {
       persistMatches([nextMatch, ...matches]);
+      markScheduledMatchPlayed(nextMatch);
       persistLive(null);
       setCompletedMatch(nextMatch);
       setSelectedMatchId(nextMatch.id);
@@ -815,11 +903,114 @@ const setNextBatsman = (batsmanId) => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Karla:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
+        html, body {
+  width: 100%;
+  overflow-x: hidden;
+}
         body { margin:0; }
         ::-webkit-scrollbar { width: 6px; height:6px; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius:4px; }
+
+        .cricket-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #101418;
+  overflow: hidden;
+}
+
+.splash-stadium {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 50% 55%, #31452f 0%, #101418 65%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.splash-pitch {
+  position: absolute;
+  width: 45%;
+  height: 18%;
+  background: #59634c;
+  border-radius: 50%;
+  opacity: 0.35;
+}
+
+.splash-bat {
+  position: absolute;
+  font-size: 90px;
+  transform: rotate(-35deg);
+  animation: batHit 0.65s ease-in-out forwards;
+  z-index: 3;
+}
+
+.splash-ball {
+  position: absolute;
+  font-size: 35px;
+  animation: ballZoom 1.15s ease-in forwards;
+  z-index: 4;
+}
+
+.splash-ready {
+  position: absolute;
+  color: #fff;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-align: center;
+  opacity: 0;
+  transform: scale(0.7);
+  animation: readyText 0.45s ease-out 0.95s forwards;
+  z-index: 5;
+}
+
+@keyframes batHit {
+  0% {
+    transform: translateX(-120px) rotate(-55deg);
+  }
+
+  60% {
+    transform: translateX(0) rotate(-35deg);
+  }
+
+  100% {
+    transform: translateX(35px) rotate(-10deg);
+  }
+}
+
+@keyframes ballZoom {
+  0% {
+    transform: translate(-120px, -20px) scale(0.7);
+  }
+
+  35% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(35);
+  }
+}
+
+@keyframes readyText {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
       `}</style>
       <div style={{ width: "100%", maxWidth: 480, minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
+        {showSplash && <CricketSplash />}
         <Header
   liveMatch={liveMatch}
   tab={tab}
@@ -849,6 +1040,7 @@ const setNextBatsman = (batsmanId) => {
               players={players}
               addPlayer={addPlayer}
               startMatch={startMatch}
+              scheduledMatchToStart={scheduledMatchToStart}
               recordBall={recordBall}
               undoLastBall={undoLastBall}
               canUndo={!!undoSnapshot}
@@ -859,6 +1051,18 @@ const setNextBatsman = (batsmanId) => {
               cancelLiveMatch={cancelLiveMatch}
             />
           )}
+
+{tab === "tournaments" && (
+  <TournamentTab
+    tournaments={tournaments}
+    matches={matches}
+    persistTournaments={persistTournaments}
+    setScheduledMatchToStart={setScheduledMatchToStart}
+
+    setTab={setTab}
+  />
+)}
+
           {tab === "history" && (
             <HistoryTab
               matches={matches}
@@ -920,8 +1124,8 @@ function Header({ liveMatch, tab, theme, setTheme }) {
     src="/logo.png"
     alt="Gully Cricket Scorer"
     style={{
-      width: 50,
-      height: 50,
+      width: 45,
+      height: 45,
       objectFit: "contain",
       borderRadius: 10,
     }}
@@ -938,7 +1142,7 @@ function Header({ liveMatch, tab, theme, setTheme }) {
     src="/wordmark.png"
     alt="Gully Cricket Scorer"
     style={{
-      width: 160,
+      width: 125,
       height: 58,
       objectFit: "contain",
       display: "block",
@@ -993,8 +1197,10 @@ function BottomNav({ tab, setTab, liveActive }) {
   const items = [
     { key: "dashboard", label: "Home" },
     { key: "match", label: liveActive ? "Live" : "New match" },
+    { key: "tournaments", label: "Tournament" },
     { key: "players", label: "Players" },
     { key: "history", label: "History" },
+    
   ];
   return (
     <div
@@ -1179,7 +1385,16 @@ function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHi
 )}
 
       {lastMatch && (
-        <Panel style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => goToHistory(lastMatch.id)}>
+        <Panel
+  style={{
+    marginBottom: 14,
+    cursor: "pointer",
+    textAlign: "center",
+    borderTop: `3px solid ${C.red}`,
+    padding: 18,
+  }}
+  onClick={() => goToHistory(lastMatch.id)}
+>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Last result</div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{lastMatch.result}</div>
           <div style={{ fontSize: 12.5, color: C.muted, marginTop: 4 }}>
@@ -1189,26 +1404,89 @@ function Dashboard({ players, matches, liveMatch, careerStats, goToMatch, goToHi
       )}
 
       {topRuns.length > 0 && (
-        <Panel style={{ marginBottom: 14 }}>
+        <Panel
+  style={{
+    marginBottom: 14,
+    borderTop: `3px solid ${C.green}`,
+    padding: 16,
+  }}
+>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Top run scorers</div>
-          {topRuns.map((s, i) => (
-            <div key={s.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ fontSize: 13.5 }}>{s.name}</span>
-              <span style={{ fontFamily: "'Teko', sans-serif", fontSize: 19, color: C.green }}>{s.runs}</span>
-            </div>
-          ))}
+         {topRuns.map((s, i) => (
+  <div
+    key={s.id}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "8px 0",
+      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+    }}
+  >
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 14 }}>
+        {i === 0 ? "🥇" : `${i + 1}.`} {s.name}
+      </span>
+      <span style={{ fontSize: 11, color: C.muted }}>
+        {s.matches} matches
+      </span>
+    </div>
+
+    <span
+      style={{
+        fontFamily: "'Meko', sans-serif",
+        fontSize: 19,
+        color: C.green,
+        fontWeight: 700,
+      }}
+    >
+      {s.runs}
+    </span>
+  </div>
+))}
         </Panel>
       )}
 
       {topWickets.length > 0 && (
-        <Panel>
+        <Panel
+  style={{
+    borderTop: `3px solid ${C.red}`,
+    padding: 16,
+  }}
+>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Top wicket takers</div>
           {topWickets.map((s, i) => (
-            <div key={s.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ fontSize: 13.5 }}>{s.name}</span>
-              <span style={{ fontFamily: "'Teko', sans-serif", fontSize: 19, color: C.red }}>{s.wickets}</span>
-            </div>
-          ))}
+  <div
+    key={s.id}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "8px 0",
+      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+    }}
+  >
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 14 }}>
+        {i === 0 ? "🥇" : `${i + 1}.`} {s.name}
+      </span>
+      <span style={{ fontSize: 11, color: C.muted }}>
+        {s.matches} matches
+      </span>
+    </div>
+
+    <span
+      style={{
+        fontFamily: "'Meko', sans-serif",
+        fontSize: 19,
+        color: C.red,
+        fontWeight: 700,
+      }}
+    >
+      {s.wickets}
+    </span>
+  </div>
+))}
         </Panel>
       )}
 
@@ -1308,6 +1586,820 @@ function StatMini({ label, value }) {
 
 /* ---------------- Match tab ---------------- */
 
+function TournamentTab({ tournaments, matches, persistTournaments, setScheduledMatchToStart, setTab, }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedTournamentId, setSelectedTournamentId] = useState(null);
+  const [tournamentName, setTournamentName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+const [showEdit, setShowEdit] = useState(false);
+const [editTournamentName, setEditTournamentName] = useState("");
+const [editStartDate, setEditStartDate] = useState("");
+const [editEndDate, setEditEndDate] = useState("");
+
+const [showSchedule, setShowSchedule] = useState(false);
+const [scheduleTeamA, setScheduleTeamA] = useState("");
+const [scheduleTeamB, setScheduleTeamB] = useState("");
+const [scheduleDate, setScheduleDate] = useState("");
+
+  const createTournament = () => {
+    if (!tournamentName.trim()) return;
+
+    const newTournament = {
+      id: uid(),
+      name: tournamentName.trim(),
+      startDate,
+      endDate,
+      matchIds: [],
+      scheduledMatches: [],
+    };
+
+
+
+  
+
+    persistTournaments([newTournament, ...tournaments]);
+
+    setTournamentName("");
+    setStartDate("");
+    setEndDate("");
+    setShowCreate(false);
+  };
+
+  const deleteTournament = (tournamentId) => {
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this tournament?"
+  );
+
+  if (!confirmed) return;
+
+  const updatedTournaments = tournaments.filter(
+    (tournament) => tournament.id !== tournamentId
+  );
+
+  persistTournaments(updatedTournaments);
+
+  if (selectedTournamentId === tournamentId) {
+    setSelectedTournamentId(null);
+  }
+};
+
+const editTournament = () => {
+  if (!selectedTournament) return;
+  if (!editTournamentName.trim()) return;
+
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          name: editTournamentName.trim(),
+          startDate: editStartDate,
+          endDate: editEndDate,
+        }
+      : tournament
+  );
+
+  persistTournaments(updatedTournaments);
+
+  setShowEdit(false);
+};
+
+  const scheduleMatch = () => {
+  if (!selectedTournament) return;
+  if (!scheduleTeamA.trim() || !scheduleTeamB.trim()) return;
+
+  const newScheduledMatch = {
+    id: uid(),
+    teamAName: scheduleTeamA.trim(),
+    teamBName: scheduleTeamB.trim(),
+    date: scheduleDate,
+    status: "scheduled",
+  };
+
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          scheduledMatches: [
+            ...(tournament.scheduledMatches || []),
+            newScheduledMatch,
+          ],
+        }
+      : tournament
+  );
+
+  persistTournaments(updatedTournaments);
+
+  setScheduleTeamA("");
+  setScheduleTeamB("");
+  setScheduleDate("");
+  setShowSchedule(false);
+};
+
+const deleteScheduledMatch = (matchId) => {
+  if (!selectedTournament) return;
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this match?"
+  );
+
+  if (!confirmed) return;
+
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          scheduledMatches: (tournament.scheduledMatches || []).filter(
+            (match) => match.id !== matchId
+          ),
+        }
+      : tournament
+  );
+
+  persistTournaments(updatedTournaments);
+};
+
+  const selectedTournament = tournaments.find(
+  (tournament) => tournament.id === selectedTournamentId
+);
+
+const getPlayedMatch = (scheduledMatchId) =>
+  matches.find((match) => match.scheduledMatchId === scheduledMatchId);
+
+const getTournamentStandings = (tournament) => {
+  const standings = {};
+
+  (tournament.scheduledMatches || []).forEach((scheduledMatch) => {
+    const playedMatch = getPlayedMatch(scheduledMatch.id);
+
+    if (!playedMatch || playedMatch.status !== "completed") return;
+
+    const teams = [
+      scheduledMatch.teamAName,
+      scheduledMatch.teamBName,
+    ];
+
+    teams.forEach((team) => {
+      if (!standings[team]) {
+        standings[team] = {
+          team,
+          played: 0,
+          won: 0,
+          lost: 0,
+          tied: 0,
+          points: 0,
+        };
+      }
+    });
+
+    standings[scheduledMatch.teamAName].played += 1;
+    standings[scheduledMatch.teamBName].played += 1;
+
+    const result = (playedMatch.result || "").toLowerCase();
+
+    if (result.includes("tied")) {
+      standings[scheduledMatch.teamAName].tied += 1;
+      standings[scheduledMatch.teamBName].tied += 1;
+
+      standings[scheduledMatch.teamAName].points += 1;
+      standings[scheduledMatch.teamBName].points += 1;
+    } else if (result.includes(scheduledMatch.teamAName.toLowerCase())) {
+      standings[scheduledMatch.teamAName].won += 1;
+      standings[scheduledMatch.teamAName].points += 2;
+      standings[scheduledMatch.teamBName].lost += 1;
+    } else if (result.includes(scheduledMatch.teamBName.toLowerCase())) {
+      standings[scheduledMatch.teamBName].won += 1;
+      standings[scheduledMatch.teamBName].points += 2;
+      standings[scheduledMatch.teamAName].lost += 1;
+    }
+  });
+
+  return Object.values(standings).sort(
+    (a, b) => b.points - a.points || b.won - a.won || a.team.localeCompare(b.team)
+  );
+};
+
+const getTournamentStatus = (tournament) => {
+  const today = new Date().toISOString().split("T")[0];
+
+  const scheduledMatches = tournament.scheduledMatches || [];
+
+  const playedMatches = scheduledMatches.filter(
+    (match) => match.status === "played"
+  ).length;
+
+  if (
+    tournament.endDate &&
+    tournament.endDate < today
+  ) {
+    return {
+      label: "Completed",
+      icon: "🏁",
+      color: C.muted,
+    };
+  }
+
+  if (
+    scheduledMatches.length > 0 &&
+    playedMatches === scheduledMatches.length
+  ) {
+    return {
+      label: "Completed",
+      icon: "🏁",
+      color: C.muted,
+    };
+  }
+
+  if (
+    tournament.startDate &&
+    tournament.startDate > today
+  ) {
+    return {
+      label: "Upcoming",
+      icon: "🟢",
+      color: C.green,
+    };
+  }
+
+  return {
+    label: "Ongoing",
+    icon: "🔵",
+    color: C.green,
+  };
+};
+
+  if (selectedTournament) {
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        onClick={() => setSelectedTournamentId(null)}
+        style={{ marginBottom: 12 }}
+      >
+        ← Back to Tournaments
+      </Button>
+
+      <Panel
+        style={{
+          marginBottom: 14,
+          borderTop: `3px solid ${C.mustard}`,
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 22,
+            fontWeight: 800,
+            color: C.text,
+          }}
+        >
+          🏆 {selectedTournament.name}
+        </div>
+
+        <div
+  style={{
+    display: "flex",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 14,
+  }}
+>
+  <Button
+    variant="ghost"
+    onClick={() => {
+      setEditTournamentName(selectedTournament.name);
+      setEditStartDate(selectedTournament.startDate || "");
+      setEditEndDate(selectedTournament.endDate || "");
+      setShowEdit(true);
+    }}
+  >
+    ✏️ Edit
+  </Button>
+
+  <Button
+    variant="ghost"
+    onClick={() => deleteTournament(selectedTournament.id)}
+    style={{
+      color: C.red,
+      borderColor: C.red,
+    }}
+  >
+    🗑 Delete
+  </Button>
+
+{showEdit && (
+  <div
+    style={{
+      marginTop: 14,
+      padding: 12,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 14,
+        fontWeight: 800,
+        marginBottom: 10,
+      }}
+    >
+      Edit Tournament
+    </div>
+
+    <Field label="Tournament Name *">
+      <input
+        value={editTournamentName}
+        onChange={(e) => setEditTournamentName(e.target.value)}
+        style={inputStyle}
+      />
+    </Field>
+
+    <Field label="Start Date">
+      <input
+        type="date"
+        value={editStartDate}
+        onChange={(e) => setEditStartDate(e.target.value)}
+        style={inputStyle}
+      />
+    </Field>
+
+    <Field label="End Date">
+      <input
+        type="date"
+        value={editEndDate}
+        onChange={(e) => setEditEndDate(e.target.value)}
+        style={inputStyle}
+      />
+    </Field>
+
+    <div style={{ display: "flex", gap: 8 }}>
+      <Button
+        variant="green"
+        disabled={!editTournamentName.trim()}
+        onClick={editTournament}
+      >
+        Save Changes
+      </Button>
+
+      <Button
+        variant="ghost"
+        onClick={() => setShowEdit(false)}
+      >
+        Cancel
+      </Button>
+    </div>
+  </div>
+)}
+
+</div>
+
+        {(selectedTournament.startDate || selectedTournament.endDate) && (
+          <div
+            style={{
+              fontSize: 12,
+              color: C.muted,
+              marginTop: 6,
+            }}
+          >
+            {selectedTournament.startDate || "Start date not set"}
+            {"  →  "}
+            {selectedTournament.endDate || "End date not set"}
+          </div>
+        )}
+
+        <div
+          style={{
+            fontSize: 13,
+            color: C.muted,
+            marginTop: 12,
+          }}
+        >
+          {(() => {
+  const tournamentMatches = selectedTournament.scheduledMatches || [];
+  const played = tournamentMatches.filter(
+    (match) => match.status === "played"
+  ).length;
+  const scheduled = tournamentMatches.filter(
+    (match) => match.status !== "played"
+  ).length;
+
+  const teams = new Set();
+
+  tournamentMatches.forEach((match) => {
+    teams.add(match.teamAName);
+    teams.add(match.teamBName);
+  });
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", gap: 18 }}>
+      <span>{teams.size} Teams</span>
+      <span>{played} Played</span>
+      <span>{scheduled} Scheduled</span>
+    </div>
+  );
+})()}
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+<Button
+  variant="primary"
+  onClick={() => setShowSchedule(true)}
+>
+  + Schedule Match
+</Button>
+        </div>
+
+{showSchedule && (
+  <div
+    style={{
+      marginTop: 16,
+      paddingTop: 16,
+      borderTop: `1px solid ${C.border}`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 15,
+        fontWeight: 800,
+        marginBottom: 12,
+      }}
+    >
+      Schedule Match
+    </div>
+
+    <Field label="Team A Name *">
+      <input
+        style={inputStyle}
+        value={scheduleTeamA}
+        onChange={(e) => setScheduleTeamA(e.target.value)}
+        placeholder="e.g. Mehtab XI"
+      />
+    </Field>
+
+    <Field label="Team B Name *">
+      <input
+        style={inputStyle}
+        value={scheduleTeamB}
+        onChange={(e) => setScheduleTeamB(e.target.value)}
+        placeholder="e.g. Zubair XI"
+      />
+    </Field>
+
+    <Field label="Match Date">
+      <input
+        style={inputStyle}
+        type="date"
+        value={scheduleDate}
+        onChange={(e) => setScheduleDate(e.target.value)}
+      />
+    </Field>
+
+    <Button
+      variant="green"
+      disabled={!scheduleTeamA.trim() || !scheduleTeamB.trim()}
+      onClick={scheduleMatch}
+    >
+      Schedule Match
+    </Button>
+  </div>
+)}
+
+      </Panel>
+
+  <Panel>
+  <div
+    style={{
+      fontSize: 16,
+      fontWeight: 800,
+      marginBottom: 12,
+    }}
+  >
+    🏆 Points Table
+  </div>
+
+  {getTournamentStandings(selectedTournament).length === 0 ? (
+    <div
+      style={{
+        color: C.muted,
+        fontSize: 13,
+      }}
+    >
+      No completed matches yet.
+    </div>
+  ) : (
+    <div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 40px 40px 40px 40px 50px",
+          gap: 4,
+          fontSize: 11,
+          fontWeight: 800,
+          color: C.muted,
+          paddingBottom: 8,
+        }}
+      >
+<div>Team</div>
+<div style={{ textAlign: "center" }}>P</div>
+<div style={{ textAlign: "center" }}>W</div>
+<div style={{ textAlign: "center" }}>L</div>
+<div style={{ textAlign: "center" }}>T</div>
+<div style={{ textAlign: "center" }}>Pts</div>
+      </div>
+
+      {getTournamentStandings(selectedTournament).map((team, index) => (
+        <div
+          key={team.team}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 40px 40px 40px 40px 50px",
+            gap: 4,
+            padding: "10px 0",
+            borderTop: `1px solid ${C.border}`,
+            fontSize: 13,
+            fontWeight: index === 0 ? 800 : 600,
+          }}
+        >
+          <div>
+            {index + 1}. {team.team}
+          </div>
+          <div style={{ textAlign: "center" }}>{team.played}</div>
+          <div style={{ textAlign: "center" }}>{team.won}</div>
+<div style={{ textAlign: "center" }}>{team.lost}</div>
+<div style={{ textAlign: "center" }}>{team.tied}</div>
+<div
+  style={{
+    textAlign: "center",
+    fontWeight: 800,
+  }}
+>
+  {team.points}
+</div>
+        </div>
+      ))}
+    </div>
+  )}
+</Panel>
+
+
+
+
+      <Panel>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 800,
+            marginBottom: 10,
+          }}
+        >
+          Matches
+        </div>
+
+{(!selectedTournament.scheduledMatches ||
+  selectedTournament.scheduledMatches.length === 0) ? (
+  <div style={{ fontSize: 13, color: C.muted }}>
+    No matches scheduled yet.
+  </div>
+) : (
+  selectedTournament.scheduledMatches.map((match, index) => (
+    <div
+      key={match.id}
+      style={{
+        padding: "12px 0",
+        borderTop: index > 0 ? `1px solid ${C.border}` : "none",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: C.text,
+            }}
+          >
+            {index + 1}. {match.teamAName} vs {match.teamBName}
+          </div>
+
+          <div
+            style={{
+              fontSize: 12,
+              color: C.muted,
+              marginTop: 4,
+            }}
+          >
+            Date: {match.date || "Not decided"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: C.mustard,
+            whiteSpace: "nowrap",
+          }}
+        >
+        {match.status === "played" ? "🟢 Played" : "🟡 Scheduled"}
+        </div>
+
+{match.status === "played" && getPlayedMatch(match.id) && (
+  <div
+    style={{
+      marginTop: 8,
+      padding: "6px 10px",
+      borderRadius: 8,
+      background: `${C.green}18`,
+      color: C.green,
+      fontSize: 13,
+      fontWeight: 800,
+      textAlign: "center",
+    }}
+  >
+    🏆 {getPlayedMatch(match.id).result}
+  </div>
+)}
+
+      {match.status !== "played" && (
+  <div style={{ marginTop: 8 }}>
+    <Button
+      variant="green"
+      onClick={() => {
+        setScheduledMatchToStart({
+          ...match,
+          tournamentId: selectedTournament.id,
+        });
+        setTab("match");
+      }}
+    >
+      Start Match
+    </Button>
+  </div>
+)}
+
+<div style={{ marginTop: 8 }}>
+  <Button
+    variant="ghost"
+    onClick={() => deleteScheduledMatch(match.id)}
+    style={{
+      width: "75%",
+      color: C.red,
+      borderColor: C.red,
+    }}
+  >
+  🗑
+  </Button>
+</div>
+
+      </div>
+    </div>
+  ))
+)}
+      </Panel>
+    </div>
+  );
+}
+
+  return (
+    <div>
+      <Panel
+        style={{
+          marginBottom: 14,
+          borderTop: `3px solid ${C.mustard}`,
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 20,
+            fontWeight: 800,
+            color: C.text,
+            marginBottom: 6,
+          }}
+        >
+          🏆 Tournaments
+        </div>
+
+        <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>
+          Create and manage your gully cricket tournaments.
+        </div>
+
+        <Button
+          variant="primary"
+          onClick={() => setShowCreate(!showCreate)}
+        >
+          + Create Tournament
+        </Button>
+
+        {showCreate && (
+          <div style={{ marginTop: 16 }}>
+            <Field label="Tournament Name *">
+              <input
+                style={inputStyle}
+                value={tournamentName}
+                onChange={(e) => setTournamentName(e.target.value)}
+                placeholder="e.g. Sunday Gully Cup"
+              />
+            </Field>
+
+            <Field label="Start Date">
+              <input
+                style={inputStyle}
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </Field>
+
+            <Field label="End Date">
+              <input
+                style={inputStyle}
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </Field>
+
+            <Button
+              variant="green"
+              disabled={!tournamentName.trim()}
+              onClick={createTournament}
+            >
+              Create Tournament
+            </Button>
+          </div>
+        )}
+      </Panel>
+
+      {tournaments.length > 0 && (
+        <Panel>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              marginBottom: 10,
+            }}
+          >
+            Your Tournaments
+          </div>
+
+          {tournaments.map((tournament) => (
+            <div
+              key={tournament.id}
+              onClick={() => setSelectedTournamentId(tournament.id)}
+              style={{
+                
+                padding: "10px 0",
+                borderTop: `1px solid ${C.border}`,
+                cursor: "pointer",
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700 }}>
+                {tournament.name}
+              </div>
+
+              {(() => {
+  const status = getTournamentStatus(tournament);
+
+  return (
+    <div
+      style={{
+        fontSize: 12,
+        fontWeight: 800,
+        color: status.color,
+        marginTop: 4,
+      }}
+    >
+      {status.icon} {status.label}
+    </div>
+  );
+})()}
+
+              <div
+                style={{
+                  fontSize: 12,
+                  color: C.muted,
+                  marginTop: 3,
+                }}
+              >
+                {(tournament.scheduledMatches || []).length} matches
+              </div>
+            </div>
+          ))}
+        </Panel>
+      )}
+    </div>
+  );
+}
+
 function MatchTab(props) {
   const { liveMatch, completedMatch } = props;
   const [showCompletedScorecard, setShowCompletedScorecard] = useState(false);
@@ -1388,9 +2480,22 @@ function MatchTab(props) {
 // ------------------------------------------------------------
 // Match setup: teams, squads, captains, vice captains & toss
 // ------------------------------------------------------------
-function MatchSetup({ players, addPlayer, startMatch }) {
+function MatchSetup({
+  players,
+  addPlayer,
+  startMatch,
+  scheduledMatchToStart,
+}) {
   const [teamAName, setTeamAName] = useState("Team A");
   const [teamBName, setTeamBName] = useState("Team B");
+
+  useEffect(() => {
+  if (scheduledMatchToStart) {
+    setTeamAName(scheduledMatchToStart.teamAName);
+    setTeamBName(scheduledMatchToStart.teamBName);
+  }
+}, [scheduledMatchToStart]);
+
   const [teamAPlayers, setTeamAPlayers] = useState([]);
   const [teamBPlayers, setTeamBPlayers] = useState([]);
   const [overs, setOvers] = useState(6);
@@ -1628,7 +2733,8 @@ const canStart =
   teamACaptain,
   teamAViceCaptain,
   teamBCaptain,
-  teamBViceCaptain
+  teamBViceCaptain,
+  scheduledMatchToStart,
 })
         }
       >
