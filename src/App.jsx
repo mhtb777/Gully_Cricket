@@ -1054,6 +1054,7 @@ const setNextBatsman = (batsmanId) => {
 
 {tab === "tournaments" && (
   <TournamentTab
+    players={players}
     tournaments={tournaments}
     matches={matches}
     persistTournaments={persistTournaments}
@@ -1208,8 +1209,13 @@ function BottomNav({ tab, setTab, liveActive }) {
         display: "flex",
         borderTop: `1px solid ${C.border}`,
         background: C.panel,
-        position: "sticky",
+        position: "fixed",
+        left: 0,
+        right: 0,
         bottom: 0,
+        margin: "0 auto",
+        maxWidth: 480,
+        zIndex: 1000,
       }}
     >
       {items.map((it) => (
@@ -1586,7 +1592,7 @@ function StatMini({ label, value }) {
 
 /* ---------------- Match tab ---------------- */
 
-function TournamentTab({ tournaments, matches, persistTournaments, setScheduledMatchToStart, setTab, }) {
+function TournamentTab({ Players, tournaments, matches, persistTournaments, setScheduledMatchToStart, setTab, }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTournamentId, setSelectedTournamentId] = useState(null);
   const [tournamentName, setTournamentName] = useState("");
@@ -1599,9 +1605,12 @@ const [editStartDate, setEditStartDate] = useState("");
 const [editEndDate, setEditEndDate] = useState("");
 
 const [showSchedule, setShowSchedule] = useState(false);
+const [selectedScorecardMatch, setSelectedScorecardMatch] = useState(null);
 const [scheduleTeamA, setScheduleTeamA] = useState("");
 const [scheduleTeamB, setScheduleTeamB] = useState("");
 const [scheduleDate, setScheduleDate] = useState("");
+
+const [teamName, setTeamName] = useState("");
 
   const createTournament = () => {
     if (!tournamentName.trim()) return;
@@ -1613,6 +1622,7 @@ const [scheduleDate, setScheduleDate] = useState("");
       endDate,
       matchIds: [],
       scheduledMatches: [],
+      teams: [],
     };
 
 
@@ -1626,6 +1636,131 @@ const [scheduleDate, setScheduleDate] = useState("");
     setEndDate("");
     setShowCreate(false);
   };
+  
+  const addTournamentTeam = () => {
+  if (!selectedTournament) return;
+ 
+  const name = teamName.trim();
+  if (!name) return;
+ 
+  const existingTeams = selectedTournament.teams || [];
+ 
+  if (
+    existingTeams.some(
+      (team) => team.name.toLowerCase() === name.toLowerCase()
+    )
+  ) {
+    alert("Team already exists.");
+    return;
+  }
+ 
+  const newTeam = {
+    id: uid(),
+    name,
+  };
+ 
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          teams: [...(tournament.teams || []), newTeam],
+        }
+      : tournament
+  );
+ 
+  persistTournaments(updatedTournaments);
+  setTeamName("");
+};
+
+const editTournamentTeam = (team) => {
+  if (!selectedTournament) return;
+ 
+  const newName = window.prompt(
+    "Enter new team name:",
+    team.name
+  );
+ 
+  if (newName === null) return;
+ 
+  const trimmedName = newName.trim();
+ 
+  if (!trimmedName) return;
+ 
+  const duplicate = (selectedTournament.teams || []).some(
+    (item) =>
+      item.id !== team.id &&
+      item.name.toLowerCase() === trimmedName.toLowerCase()
+  );
+ 
+  if (duplicate) {
+    alert("Team already exists.");
+    return;
+  }
+ 
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          teams: (tournament.teams || []).map((item) =>
+            item.id === team.id
+              ? { ...item, name: trimmedName }
+              : item
+          ),
+          scheduledMatches: (tournament.scheduledMatches || []).map(
+            (match) => ({
+              ...match,
+              teamAName:
+                match.teamAName === team.name
+                  ? trimmedName
+                  : match.teamAName,
+              teamBName:
+                match.teamBName === team.name
+                  ? trimmedName
+                  : match.teamBName,
+            })
+          ),
+        }
+      : tournament
+  );
+ 
+  persistTournaments(updatedTournaments);
+};
+
+const deleteTournamentTeam = (team) => {
+  if (!selectedTournament) return;
+ 
+  const usedInMatch = (selectedTournament.scheduledMatches || []).some(
+    (match) =>
+      match.teamAName === team.name ||
+      match.teamBName === team.name
+  );
+ 
+  if (usedInMatch) {
+    alert(
+      `${team.name} cannot be deleted because it is already used in a scheduled or played match.`
+    );
+    return;
+  }
+ 
+  const confirmed = window.confirm(
+    `Delete ${team.name}?`
+  );
+ 
+  if (!confirmed) return;
+ 
+  const updatedTournaments = tournaments.map((tournament) =>
+    tournament.id === selectedTournament.id
+      ? {
+          ...tournament,
+          teams: (tournament.teams || []).filter(
+            (item) => item.id !== team.id
+          ),
+        }
+      : tournament
+  );
+ 
+  persistTournaments(updatedTournaments);
+};
 
   const deleteTournament = (tournamentId) => {
   const confirmed = window.confirm(
@@ -1991,15 +2126,110 @@ const getTournamentStatus = (tournament) => {
     teams.add(match.teamBName);
   });
 
+if (selectedScorecardMatch) {
+  return (
+    <Scorecard
+      match={selectedScorecardMatch}
+      players={JSON.parse(localStorage.getItem("players") || "[]")}
+      onBack={() => setSelectedScorecardMatch(null)}
+    />
+  );
+}
+
   return (
     <div style={{ display: "flex", justifyContent: "center", gap: 18 }}>
-      <span>{teams.size} Teams</span>
+      <span>{(selectedTournament.teams || []).lenght} Teams</span>
       <span>{played} Played</span>
       <span>{scheduled} Scheduled</span>
     </div>
   );
 })()}
         </div>
+        
+        
+        <Panel>
+  <div
+    style={{
+      fontSize: 16,
+      fontWeight: 800,
+      marginBottom: 12,
+    }}
+  >
+    👥 Teams
+  </div>
+ 
+  {(selectedTournament.teams || []).length === 0 ? (
+    <div
+      style={{
+        color: C.muted,
+        fontSize: 13,
+        marginBottom: 12,
+      }}
+    >
+      No teams added yet.
+    </div>
+  ) : (
+    (selectedTournament.teams || []).map((team, index) => (
+      <div
+        key={team.id}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 0",
+          borderTop:
+            index === 0 ? "none" : `1px solid ${C.border}`,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>
+          {index + 1}. {team.name}
+        </div>
+ 
+<div style={{ display: "flex", gap: 6 }}>
+  <Button
+    variant="ghost"
+    onClick={() => editTournamentTeam(team)}
+  >
+    ✏️
+  </Button>
+ 
+  <Button
+    variant="danger"
+    onClick={() => deleteTournamentTeam(team)}
+  >
+    🗑️
+  </Button>
+</div>
+      </div>
+    ))
+  )}
+ 
+  <div
+    style={{
+      display: "flex",
+      gap: 8,
+      marginTop: 12,
+    }}
+  >
+    <input
+      style={{
+        ...inputStyle,
+        flex: 1,
+      }}
+      value={teamName}
+      onChange={(e) => setTeamName(e.target.value)}
+      placeholder="e.g. Knight Riders"
+    />
+ 
+    <Button
+      variant="green"
+      disabled={!teamName.trim()}
+      onClick={addTournamentTeam}
+    >
+      + Add
+    </Button>
+  </div>
+</Panel>
 
         <div style={{ marginTop: 14 }}>
 <Button
@@ -2028,23 +2258,39 @@ const getTournamentStatus = (tournament) => {
       Schedule Match
     </div>
 
-    <Field label="Team A Name *">
-      <input
-        style={inputStyle}
-        value={scheduleTeamA}
-        onChange={(e) => setScheduleTeamA(e.target.value)}
-        placeholder="e.g. Mehtab XI"
-      />
-    </Field>
+    <Field label="Team A *">
+  <select
+    style={inputStyle}
+    value={scheduleTeamA}
+    onChange={(e) => setScheduleTeamA(e.target.value)}
+  >
+    <option value="">Select Team A</option>
+ 
+    {(selectedTournament.teams || []).map((team) => (
+      <option key={team.id} value={team.name}>
+        {team.name}
+      </option>
+    ))}
+  </select>
+</Field>
 
-    <Field label="Team B Name *">
-      <input
-        style={inputStyle}
-        value={scheduleTeamB}
-        onChange={(e) => setScheduleTeamB(e.target.value)}
-        placeholder="e.g. Zubair XI"
-      />
-    </Field>
+    <Field label="Team B *">
+  <select
+    style={inputStyle}
+    value={scheduleTeamB}
+    onChange={(e) => setScheduleTeamB(e.target.value)}
+  >
+    <option value="">Select Team B</option>
+ 
+    {(selectedTournament.teams || [])
+      .filter((team) => team.name !== scheduleTeamA)
+      .map((team) => (
+        <option key={team.id} value={team.name}>
+          {team.name}
+        </option>
+      ))}
+  </select>
+</Field>
 
     <Field label="Match Date">
       <input
@@ -2057,7 +2303,11 @@ const getTournamentStatus = (tournament) => {
 
     <Button
       variant="green"
-      disabled={!scheduleTeamA.trim() || !scheduleTeamB.trim()}
+      disabled={
+      !scheduleTeamA ||
+      !scheduleTeamB ||
+      scheduleTeamA === scheduleTeamB
+      }
       onClick={scheduleMatch}
     >
       Schedule Match
@@ -2212,19 +2462,36 @@ const getTournamentStatus = (tournament) => {
         </div>
 
 {match.status === "played" && getPlayedMatch(match.id) && (
-  <div
-    style={{
-      marginTop: 8,
-      padding: "6px 10px",
-      borderRadius: 8,
-      background: `${C.green}18`,
-      color: C.green,
-      fontSize: 13,
-      fontWeight: 800,
-      textAlign: "center",
-    }}
-  >
-    🏆 {getPlayedMatch(match.id).result}
+  <div>
+    <div
+      style={{
+        marginTop: 8,
+        padding: "6px 10px",
+        borderRadius: 8,
+        background: `${C.green}18`,
+        color: C.green,
+        fontSize: 13,
+        fontWeight: 800,
+        textAlign: "center",
+      }}
+    >
+      🏆 {getPlayedMatch(match.id).result}
+    </div>
+
+    <Button
+      variant="ghost"
+      onClick={() =>
+        setSelectedScorecardMatch(getPlayedMatch(match.id))
+      }
+      style={{
+        marginTop: 8,
+        width: "100%",
+        color: C.green,
+        borderColor: C.green,
+      }}
+    >
+      📊 View Scorecard
+    </Button>
   </div>
 )}
 
@@ -2351,49 +2618,131 @@ const getTournamentStatus = (tournament) => {
             Your Tournaments
           </div>
 
-          {tournaments.map((tournament) => (
-            <div
-              key={tournament.id}
-              onClick={() => setSelectedTournamentId(tournament.id)}
-              style={{
-                
-                padding: "10px 0",
-                borderTop: `1px solid ${C.border}`,
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 700 }}>
-                {tournament.name}
-              </div>
-
-              {(() => {
+   {tournaments.map((tournament) => {
   const status = getTournamentStatus(tournament);
+  const tournamentMatches = tournament.scheduledMatches || [];
+
+  const played = tournamentMatches.filter(
+    (match) => match.status === "played"
+  ).length;
+
+  const scheduled = tournamentMatches.filter(
+    (match) => match.status !== "played"
+  ).length;
+
+  const total = tournamentMatches.length;
+
+  const teams = new Set();
+
+  tournamentMatches.forEach((match) => {
+    teams.add(match.teamAName);
+    teams.add(match.teamBName);
+  });
+
+  const progress =
+    total > 0 ? Math.round((played / total) * 100) : 0;
 
   return (
     <div
+      key={tournament.id}
+      onClick={() => setSelectedTournamentId(tournament.id)}
       style={{
-        fontSize: 12,
-        fontWeight: 800,
-        color: status.color,
-        marginTop: 4,
+        padding: "14px 0",
+        borderTop: `1px solid ${C.border}`,
+        cursor: "pointer",
       }}
     >
-      {status.icon} {status.label}
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: C.text,
+        }}
+      >
+        {tournament.name}
+      </div>
+
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: status.color,
+          marginTop: 5,
+        }}
+      >
+        {status.icon} {status.label}
+      </div>
+
+      {(tournament.startDate || tournament.endDate) && (
+        <div
+          style={{
+            fontSize: 12,
+            color: C.muted,
+            marginTop: 4,
+          }}
+        >
+          {tournament.startDate || "—"}
+          {tournament.endDate
+            ? ` → ${tournament.endDate}`
+            : " → End date not set"}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: 14,
+          marginTop: 10,
+          fontSize: 12,
+          color: C.muted,
+        }}
+      >
+        <span>
+          {(tournament.teams || []).length} Teams
+        </span>
+
+        <span>
+          {played} Played
+        </span>
+
+        <span>
+          {scheduled} Scheduled
+        </span>
+      </div>
+
+      <div
+        style={{
+          marginTop: 9,
+          fontSize: 12,
+          color: C.muted,
+        }}
+      >
+        {played} / {total} Matches Played
+      </div>
+
+      <div
+        style={{
+          height: 6,
+          background: C.panelLight,
+          borderRadius: 99,
+          marginTop: 6,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${progress}%`,
+            height: "100%",
+            background: C.green,
+            borderRadius: 99,
+          }}
+        />
+      </div>
     </div>
   );
-})()}
-
-              <div
-                style={{
-                  fontSize: 12,
-                  color: C.muted,
-                  marginTop: 3,
-                }}
-              >
-                {(tournament.scheduledMatches || []).length} matches
-              </div>
-            </div>
-          ))}
+})}
         </Panel>
       )}
     </div>
@@ -3799,29 +4148,59 @@ function Scorecard({ match, players, onBack }) {
         const teamName = inn.battingTeam === "A" ? match.teamAName : match.teamBName;
         return (
           <Panel key={i} style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{teamName}</div>
-              <ScoreDigits size={26} color={C.mustard}>
-                {inn.totalRuns}/{inn.totalWickets}
-              </ScoreDigits>
-              <span style={{ fontSize: 12, color: C.muted }}>{formatOvers(inn.legalBalls)} ov</span>
-            </div>
 <div
   style={{
-    fontSize: 11.5,
-    color: C.muted,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
-    gap: 4,
-    marginBottom: 4,
+    gridTemplateColumns: "1fr auto 1fr",
+    alignItems: "center",
+    marginBottom: 14,
   }}
 >
-<span>Batter</span>
-<span style={{ textAlign: "right" }}>R</span>
-<span style={{ textAlign: "right" }}>B</span>
-<span style={{ textAlign: "right" }}>4s</span>
-<span style={{ textAlign: "right" }}>6s</span>
-<span style={{ textAlign: "right" }}>SR</span>
+  <div
+    style={{
+      fontWeight: 800,
+      fontSize: 15,
+      textAlign: "left",
+      minWidth: 0,
+    }}
+  >
+    {teamName}
+  </div>
+
+  <ScoreDigits size={28} color={C.mustard}>
+    {inn.totalRuns}/{inn.totalWickets}
+  </ScoreDigits>
+
+  <div
+    style={{
+      fontSize: 12,
+      color: C.muted,
+      textAlign: "right",
+      whiteSpace: "nowrap",
+    }}
+  >
+    {formatOvers(inn.legalBalls)} ov
+  </div>
+</div>
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 38px 38px 38px 38px 52px",
+    columnGap: 6,
+    alignItems: "center",
+    padding: "0 0 7px 0",
+    borderBottom: `1px solid ${C.border}`,
+    fontSize: 11,
+    fontWeight: 700,
+    color: C.muted,
+  }}
+>
+  <span>Batter</span>
+  <span style={{ textAlign: "right" }}>R</span>
+  <span style={{ textAlign: "right" }}>B</span>
+  <span style={{ textAlign: "right" }}>4s</span>
+  <span style={{ textAlign: "right" }}>6s</span>
+  <span style={{ textAlign: "right" }}>SR</span>
 </div>
             {Object.entries(inn.batsmen).map(([pid, b]) => (
               <div
@@ -3829,9 +4208,10 @@ function Scorecard({ match, players, onBack }) {
   style={{
     fontSize: 13,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
-    gap: 4,
-    padding: "3px 0",
+   gridTemplateColumns: "minmax(0, 1fr) 38px 38px 38px 38px 52px",
+   columnGap: 6,
+   alignItems: "start",
+   padding: "7px 0",
   }}
 >
 <span style={{ display: "flex", flexDirection: "column" }}>
@@ -3852,15 +4232,18 @@ function Scorecard({ match, players, onBack }) {
 </span>
 
   {b.out && (
-    <span
-      style={{
-        color: C.muted,
-        fontSize: 10.5,
-        marginTop: 2,
-      }}
-    >
-      {dismissalText(b, players)}
-    </span>
+<span
+  style={{
+    color: C.muted,
+    fontSize: 10.5,
+    lineHeight: 1.2,
+    marginTop: 2,
+    whiteSpace: "nowrap",
+    display: "block",
+  }}
+>
+  {dismissalText(b, players)}
+</span>
   )}
 </span>
 <span style={{ textAlign: "right" }}>{b.runs}</span>
@@ -3904,21 +4287,23 @@ function Scorecard({ match, players, onBack }) {
 
 <div
   style={{
-    fontSize: 11.5,
+    fontSize: 11,
+    fontWeight: 700,
     color: C.muted,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
-    gap: 4,
-    marginTop: 12,
-    marginBottom: 4,
+    gridTemplateColumns: "minmax(0, 1fr) 32px 32px 32px 32px 52px",
+    columnGap: 5,
+    alignItems: "center",
+    paddingBottom: 7,
+    borderBottom: `1px solid ${C.border}`,
   }}
 >
   <span>Bowler</span>
-  <span>O</span>
-  <span>M</span>
-  <span>R</span>
-  <span>W</span>
-  <span>Econ</span>
+<span style={{ textAlign: "right" }}>O</span>
+<span style={{ textAlign: "right" }}>M</span>
+<span style={{ textAlign: "right" }}>R</span>
+<span style={{ textAlign: "right" }}>W</span>
+<span style={{ textAlign: "right" }}>Econ</span>
 </div>
             {Object.entries(inn.bowlers).map(([pid, bw]) => (
 <div
@@ -3926,12 +4311,16 @@ function Scorecard({ match, players, onBack }) {
   style={{
     fontSize: 13,
     display: "grid",
-    gridTemplateColumns: "1fr 40px 40px 40px 40px 55px",
-    gap: 4,
-    padding: "3px 0",
+gridTemplateColumns: "minmax(0, 1fr) 32px 32px 32px 32px 52px",
+columnGap: 5,
+alignItems: "center",
+padding: "7px 0",
   }}
 >
 <span>
+
+
+  
   {playerName(players, pid)}
   {pid === inn.currentBowlerId && (
     <span style={{ color: C.green }}> *</span>
