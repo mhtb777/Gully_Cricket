@@ -90,6 +90,8 @@ function emptyInnings(battingTeam, bowlingTeam, oversLimit, target) {
     bowlers: {},
     overHistory: [[]],
     fallOfWickets: [],
+    partnerships: [],
+    currentPartnership: null,
     complete: false,
   };
 }
@@ -578,6 +580,22 @@ const persistLive = (next) => {
       if (runsToBatsman === 4) b.fours += 1;
       if (runsToBatsman === 6) b.sixes += 1;
     }
+
+    // Partnership runs
+if (
+  inn.currentPartnership &&
+  inn.currentPartnership.batsmanAId &&
+  inn.currentPartnership.batsmanBId
+) {
+  inn.currentPartnership.runs += runsToTeam;
+
+  if (striker === inn.currentPartnership.batsmanAId) {
+    inn.currentPartnership.batsmanARuns += runsToBatsman;
+  } else if (striker === inn.currentPartnership.batsmanBId) {
+    inn.currentPartnership.batsmanBRuns += runsToBatsman;
+  }
+}
+
     // ball faced count: legal balls + no-balls count as a ball faced, wides do not
     if (striker && (isLegalBall || extra === "noball")) {
       inn.batsmen[striker].balls += 1;
@@ -625,6 +643,15 @@ if (extra === "wide") {
       batsmanOutId = wicket.batsmanOutId || striker;
       inn.totalWickets += 1;
 
+      // Save completed partnership when wicket falls
+if (inn.currentPartnership) {
+  inn.partnerships = inn.partnerships || [];
+  inn.partnerships.push({
+    ...inn.currentPartnership,
+  });
+  inn.currentPartnership = null;
+}
+
       if (!inn.fallOfWickets) {
   inn.fallOfWickets = [];
 }
@@ -632,10 +659,10 @@ if (extra === "wide") {
 inn.fallOfWickets.push({
   wicketNumber: inn.totalWickets,
   batsmanId: batsmanOutId,
+  bowlerId: inn.currentBowlerId,
   score: inn.totalRuns,
   legalBalls: inn.legalBalls,
 });
-
 if (inn.batsmen[batsmanOutId]) {
   inn.batsmen[batsmanOutId].out = true;
   inn.batsmen[batsmanOutId].howOut = wicket.type;
@@ -724,6 +751,15 @@ if (overBowler) {
       awaitingBatsman = false;
     }
 
+    // Save current partnership when innings ends
+if (inningsOver && inn.currentPartnership) {
+  inn.partnerships = inn.partnerships || [];
+  inn.partnerships.push({
+    ...inn.currentPartnership,
+  });
+  inn.currentPartnership = null;
+}
+
     const nextMatch = JSON.parse(JSON.stringify(liveMatch));
     nextMatch.innings[idx] = inn;
 
@@ -800,6 +836,15 @@ if (overBowler) {
     inn.nonStrikerId = nonStrikerId;
     inn.currentBowlerId = bowlerId;
     inn.battingOrder = [strikerId, nonStrikerId];
+
+    inn.currentPartnership = {
+  batsmanAId: strikerId,
+  batsmanBId: nonStrikerId,
+  batsmanARuns: 0,
+  batsmanBRuns: 0,
+  runs: 0,
+};
+
     [strikerId, nonStrikerId].forEach((pid) => {
       if (!inn.batsmen[pid]) inn.batsmen[pid] = { runs: 0, balls: 0, fours: 0, sixes: 0, out: false, howOut: null };
     });
@@ -859,6 +904,21 @@ const setNextBatsman = (batsmanId) => {
   if (!inn.battingOrder.includes(batsmanId)) {
     inn.battingOrder.push(batsmanId);
   }
+
+  // Start a new partnership when both batsmen are present
+if (
+  !inn.currentPartnership &&
+  inn.strikerId &&
+  inn.nonStrikerId
+) {
+  inn.currentPartnership = {
+    batsmanAId: inn.strikerId,
+    batsmanBId: inn.nonStrikerId,
+    batsmanARuns: 0,
+    batsmanBRuns: 0,
+    runs: 0,
+  };
+}
 
   persistLive(nextMatch);
 };
@@ -1049,6 +1109,7 @@ const setNextBatsman = (batsmanId) => {
               setNextBatsman={setNextBatsman}
               setBatsmenPositions={setBatsmenPositions}
               cancelLiveMatch={cancelLiveMatch}
+              setTab={setTab}
             />
           )}
 
@@ -1057,6 +1118,7 @@ const setNextBatsman = (batsmanId) => {
     players={players}
     tournaments={tournaments}
     matches={matches}
+    liveMatch={liveMatch}
     persistTournaments={persistTournaments}
     setScheduledMatchToStart={setScheduledMatchToStart}
 
@@ -1074,6 +1136,41 @@ const setNextBatsman = (batsmanId) => {
           )}
         </div>
         <BottomNav tab={tab} setTab={setTab} liveActive={!!liveMatch} />
+
+<div
+  style={{
+    position: "absolute",
+    top: 8,
+    right: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    color: C.muted,
+    opacity: 0.45,
+    fontSize: 11,
+    fontWeight: 600,
+    pointerEvents: "none",
+    zIndex: 20,
+  }}
+>
+  <span
+    style={{
+      width: 20,
+      height: 20,
+      border: `1px solid ${C.muted}`,
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 13,
+      lineHeight: 1,
+    }}
+  >
+    C
+  </span>
+  <span>Made by Misbah</span>
+</div>
+
         {toast && (
           <div
             style={{
@@ -1110,17 +1207,26 @@ function Header({ liveMatch, tab, theme, setTheme }) {
     <div
       style={{
         padding: "16px 16px 14px 16px",
+        boxSizing: "border-box",
         borderBottom: `1px solid ${C.border}`,
         display: "flex",
         alignItems: "baseline",
         justifyContent: "space-between",
+        gap: 10,
         position: "sticky",
         top: 0,
         background: C.bg,
         zIndex: 5,
       }}
     >
-<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+<div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 0,
+  }}
+>
   <img
     src="/logo.png"
     alt="Gully Cricket Scorer"
@@ -1143,8 +1249,8 @@ function Header({ liveMatch, tab, theme, setTheme }) {
     src="/wordmark.png"
     alt="Gully Cricket Scorer"
     style={{
-      width: 125,
-      height: 58,
+      width: 105,
+      height: 50,
       objectFit: "contain",
       display: "block",
     }}
@@ -1154,7 +1260,17 @@ function Header({ liveMatch, tab, theme, setTheme }) {
 
 
 </div>
-      <div style={{ fontSize: 12.5, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
+      <div
+  style={{
+    fontSize: 12.5,
+    color: C.muted,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+  }}
+>
         {liveMatch && (
           <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.mustard, fontWeight: 700 }}>
             <span style={{ width: 7, height: 7, borderRadius: 99, background: C.mustard, display: "inline-block" }} />
@@ -1185,6 +1301,8 @@ function Header({ liveMatch, tab, theme, setTheme }) {
     color: C.text,
     fontSize: 12,
     cursor: "pointer",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
   }}
 >
   {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
@@ -1592,7 +1710,7 @@ function StatMini({ label, value }) {
 
 /* ---------------- Match tab ---------------- */
 
-function TournamentTab({ Players, tournaments, matches, persistTournaments, setScheduledMatchToStart, setTab, }) {
+function TournamentTab({ players, tournaments, matches, liveMatch, persistTournaments, setScheduledMatchToStart, setTab, }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTournamentId, setSelectedTournamentId] = useState(null);
   const [tournamentName, setTournamentName] = useState("");
@@ -1965,6 +2083,25 @@ const getTournamentStatus = (tournament) => {
 };
 
   if (selectedTournament) {
+    if (selectedScorecardMatch) {
+      return (
+        <div>
+          <Button
+            variant="ghost"
+            onClick={() => setSelectedScorecardMatch(null)}
+            style={{ marginBottom: 12 }}
+          >
+            ← Back to Tournament
+          </Button>
+          <Scorecard
+            match={selectedScorecardMatch}
+            players={players}
+            onBack={() => setSelectedScorecardMatch(null)}
+          />
+        </div>
+      );
+    }
+
   return (
     <div>
       <Button
@@ -2103,48 +2240,32 @@ const getTournamentStatus = (tournament) => {
           </div>
         )}
 
-        <div
-          style={{
-            fontSize: 13,
-            color: C.muted,
-            marginTop: 12,
-          }}
-        >
-          {(() => {
-  const tournamentMatches = selectedTournament.scheduledMatches || [];
-  const played = tournamentMatches.filter(
-    (match) => match.status === "played"
-  ).length;
-  const scheduled = tournamentMatches.filter(
-    (match) => match.status !== "played"
-  ).length;
+        {(() => {
+          const tournamentMatches = selectedTournament.scheduledMatches || [];
+          const played = tournamentMatches.filter(
+            (match) => match.status === "played"
+          ).length;
+          const scheduled = tournamentMatches.filter(
+            (match) => match.status !== "played"
+          ).length;
 
-  const teams = new Set();
-
-  tournamentMatches.forEach((match) => {
-    teams.add(match.teamAName);
-    teams.add(match.teamBName);
-  });
-
-if (selectedScorecardMatch) {
-  return (
-    <Scorecard
-      match={selectedScorecardMatch}
-      players={JSON.parse(localStorage.getItem("players") || "[]")}
-      onBack={() => setSelectedScorecardMatch(null)}
-    />
-  );
-}
-
-  return (
-    <div style={{ display: "flex", justifyContent: "center", gap: 18 }}>
-      <span>{(selectedTournament.teams || []).lenght} Teams</span>
-      <span>{played} Played</span>
-      <span>{scheduled} Scheduled</span>
-    </div>
-  );
-})()}
-        </div>
+          return (
+            <div
+              style={{
+                fontSize: 13,
+                color: C.muted,
+                marginTop: 12,
+                display: "flex",
+                justifyContent: "center",
+                gap: 18,
+              }}
+            >
+              <span>{(selectedTournament.teams || []).length} Teams</span>
+              <span>{played} Played</span>
+              <span>{scheduled} Scheduled</span>
+            </div>
+          );
+        })()}
         
         
         <Panel>
@@ -2342,12 +2463,13 @@ if (selectedScorecardMatch) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 40px 40px 40px 40px 50px",
+          gridTemplateColumns: "minmax(0, 1fr) 28px 28px 28px 28px 36px",
           gap: 4,
           fontSize: 11,
           fontWeight: 800,
           color: C.muted,
           paddingBottom: 8,
+          whiteSpace: "nowrap",
         }}
       >
 <div>Team</div>
@@ -2363,7 +2485,7 @@ if (selectedScorecardMatch) {
           key={team.team}
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 40px 40px 40px 40px 50px",
+            gridTemplateColumns: "minmax(0, 1fr) 28px 28px 28px 28px 36px",
             gap: 4,
             padding: "10px 0",
             borderTop: `1px solid ${C.border}`,
@@ -2372,7 +2494,17 @@ if (selectedScorecardMatch) {
           }}
         >
           <div>
-            {index + 1}. {team.team}
+<div
+  style={{
+    minWidth: 0,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    textAlign: "left",
+  }}
+>
+  {index + 1}. {team.team}
+</div>
           </div>
           <div style={{ textAlign: "center" }}>{team.played}</div>
           <div style={{ textAlign: "center" }}>{team.won}</div>
@@ -2413,121 +2545,172 @@ if (selectedScorecardMatch) {
   </div>
 ) : (
   selectedTournament.scheduledMatches.map((match, index) => (
+<div
+  key={match.id}
+  style={{
+    padding: "14px 0",
+    borderTop:
+      index > 0 ? `1px solid ${C.border}` : "none",
+  }}
+>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+      alignItems: "center",
+      columnGap: 8,
+    }}
+  >
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    alignItems: "center",
+    minWidth: 0,
+  }}
+>
+  <div
+    style={{
+      fontSize: 12,
+      fontWeight: 800,
+      color: C.text,
+      whiteSpace: "nowrap",
+    }}
+  >
+    {index + 1}.
+  </div>
+
+  <div
+    style={{
+      minWidth: 0,
+      fontSize: 12,
+      fontWeight: 800,
+      color: C.text,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }}
+  >
+    {match.teamAName} vs {match.teamBName}
+  </div>
+</div>
+
     <div
-      key={match.id}
       style={{
-        padding: "12px 0",
-        borderTop: index > 0 ? `1px solid ${C.border}` : "none",
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        background:
+  match.status === "played"
+    ? C.green
+    : liveMatch?.scheduledMatchId === match.id
+    ? C.red
+    : C.mustard,
+        boxShadow:
+          match.status === "played"
+            ? `0 0 0 3px rgba(76,140,91,0.12)`
+            : `0 0 0 3px rgba(227,169,62,0.12)`,
       }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: C.text,
-            }}
-          >
-            {index + 1}. {match.teamAName} vs {match.teamBName}
-          </div>
-
-          <div
-            style={{
-              fontSize: 12,
-              color: C.muted,
-              marginTop: 4,
-            }}
-          >
-            Date: {match.date || "Not decided"}
-          </div>
-        </div>
-
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: C.mustard,
-            whiteSpace: "nowrap",
-          }}
-        >
-        {match.status === "played" ? "🟢 Played" : "🟡 Scheduled"}
-        </div>
-
-{match.status === "played" && getPlayedMatch(match.id) && (
-  <div>
-    <div
-      style={{
-        marginTop: 8,
-        padding: "6px 10px",
-        borderRadius: 8,
-        background: `${C.green}18`,
-        color: C.green,
-        fontSize: 13,
-        fontWeight: 800,
-        textAlign: "center",
-      }}
-    >
-      🏆 {getPlayedMatch(match.id).result}
-    </div>
+      title={match.status === "played" ? "Played" : "Scheduled"}
+    />
+{match.status === "played" ? (
+  <Button
+    variant="green"
+    onClick={() => {
+      const playedMatch = getPlayedMatch(match.id);
+      if (playedMatch) {
+        setSelectedScorecardMatch(playedMatch);
+      }
+    }}
+    style={{
+      padding: "7px 10px",
+      minWidth: 72,
+      fontSize: 10,
+      whiteSpace: "nowrap",
+    }}
+  >
+    Scorecard
+  </Button>
+) : liveMatch?.scheduledMatchId === match.id ? (
+  <Button
+    variant="green"
+    onClick={() => setTab("match")}
+    style={{
+      padding: "7px 10px",
+      minWidth: 62,
+      fontSize: 10,
+      whiteSpace: "nowrap",
+    }}
+  >
+    Resume
+  </Button>
+) : (
+  <Button
+    variant="green"
+    onClick={() => {
+      setScheduledMatchToStart({
+        ...match,
+        tournamentId: selectedTournament.id,
+      });
+      setTab("match");
+    }}
+    style={{
+      padding: "7px 10px",
+      minWidth: 55,
+      fontSize: 10,
+      whiteSpace: "nowrap",
+    }}
+  >
+    Start
+  </Button>
+)}
 
     <Button
       variant="ghost"
-      onClick={() =>
-        setSelectedScorecardMatch(getPlayedMatch(match.id))
-      }
-      style={{
-        marginTop: 8,
-        width: "100%",
-        color: C.green,
-        borderColor: C.green,
-      }}
+      onClick={() => deleteScheduledMatch(match.id)}
+style={{
+  width: 10,
+  height: 28,
+  minWidth: 20,
+  padding: 0,
+  borderRadius: 8,
+  color: C.red,
+  borderColor: C.red,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 15,
+}}
     >
-      📊 View Scorecard
+      🗑
     </Button>
   </div>
-)}
 
-      {match.status !== "played" && (
-  <div style={{ marginTop: 8 }}>
-    <Button
-      variant="green"
-      onClick={() => {
-        setScheduledMatchToStart({
-          ...match,
-          tournamentId: selectedTournament.id,
-        });
-        setTab("match");
-      }}
-    >
-      Start Match
-    </Button>
-  </div>
-)}
-
-<div style={{ marginTop: 8 }}>
-  <Button
-    variant="ghost"
-    onClick={() => deleteScheduledMatch(match.id)}
+  <div
     style={{
-      width: "75%",
-      color: C.red,
-      borderColor: C.red,
+      lineHeight: 0.0,
+      marginTop: 0,
+      marginLeft: 6,
+      fontSize: 12,
+      color: C.muted,
+      whiteSpace: "nowrap",
+      textAlign: "left",
     }}
   >
-  🗑
-  </Button>
+    <div
+  style={{
+    marginTop: 0,
+    marginLeft: 0,
+    fontSize: 12,
+    color: C.muted,
+    whiteSpace: "nowrap",
+    textAlign: "left",
+  }}
+>
+  Date: {match.date || "Not decided"}
 </div>
-
-      </div>
-    </div>
+  </div>
+</div>
   ))
 )}
       </Panel>
@@ -3109,7 +3292,7 @@ function playerName(players, id) {
 // 10. LIVE SCORING
 // ============================================================
 
-function LiveScoring({ liveMatch, players, recordBall, undoLastBall, canUndo, setOpeners, setNextBowler, setNextBatsman, setBatsmenPositions, cancelLiveMatch }) {
+function LiveScoring({ liveMatch, players, recordBall, undoLastBall, canUndo, setOpeners, setNextBowler, setNextBatsman, setBatsmenPositions, cancelLiveMatch, setTab }) {
   const idx = liveMatch.currentInningsIdx;
   const inn = liveMatch.innings[idx];
   const battingTeamIds = teamPlayersFor(liveMatch, inn.battingTeam);
@@ -3146,6 +3329,19 @@ if (showSquads) {
 
   return (
     <div>
+
+<Button
+  variant="ghost"
+  onClick={() => setTab("dashboard")}
+  style={{
+    marginBottom: 10,
+    padding: "6px 10px",
+    fontSize: 11,
+  }}
+>
+  ← Home
+</Button>
+
       <Button
         variant="ghost"
         onClick={() => setShowSquads(false)}
@@ -3669,7 +3865,20 @@ recordBall({
 };
 
   return (
-    <div>
+  <div>
+    <Button
+      variant="ghost"
+      onClick={() => setTab("dashboard")}
+      style={{
+        marginBottom: 10,
+        padding: "6px 10px",
+        fontSize: 11,
+      }}
+    >
+      ← Home
+    </Button>
+
+    {/* scoreboard hero */}
       {/* scoreboard hero */}
       <div
         style={{
@@ -4128,6 +4337,7 @@ function dismissalText(b, players) {
 // ============================================================
 
 function Scorecard({ match, players, onBack }) {
+  const [selectedInnings, setSelectedInnings] = useState(0);
   return (
     <div>
       <button
@@ -4135,16 +4345,124 @@ function Scorecard({ match, players, onBack }) {
         style={{ background: "none", border: "none", color: C.muted, fontSize: 13, marginBottom: 12, cursor: "pointer" }}
       >
         ← All matches
-      </button>
+
+</button>
+
       <Panel style={{ marginBottom: 14 }}>
         <div style={{ fontWeight: 700, fontSize: 15 }}>
           {match.teamAName} vs {match.teamBName}
         </div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{new Date(match.date).toLocaleDateString()}</div>
-        <div style={{ fontSize: 13.5, color: C.mustard, marginTop: 8, fontWeight: 700 }}>{match.result}</div>
+
+        <div
+          style={{
+            fontSize: 12,
+            color: C.muted,
+            marginTop: 2,
+          }}
+        >
+          {new Date(match.date).toLocaleDateString()}
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            padding: "9px 12px",
+            border: `1px solid ${C.border}`,
+            borderRadius: 9,
+            fontSize: 12.5,
+            color: C.text,
+            textAlign: "center",
+          }}
+        >
+          <span
+            style={{
+              color: C.mustard,
+              fontWeight: 800,
+            }}
+          >
+            Toss :
+          </span>{" "}
+          {match.tossWinner === "A"
+            ? match.teamAName
+            : match.teamBName}{" "}
+          opt to {match.tossDecision}
+        </div>
+
+        <div
+          style={{
+            fontSize: 13.5,
+            color: C.mustard,
+            marginTop: 10,
+            fontWeight: 700,
+          }}
+        >
+          {match.result}
+        </div>
       </Panel>
 
-      {match.innings.map((inn, i) => {
+            <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        <button
+          onClick={() => setSelectedInnings(0)}
+          style={{
+            padding: "0 8px",
+height: 44,
+minWidth: 0,
+whiteSpace: "nowrap",
+overflow: "hidden",
+textOverflow: "ellipsis",
+            borderRadius: 10,
+            border: `1px solid ${
+              selectedInnings === 0 ? C.green : C.border
+            }`,
+            background: selectedInnings === 0 ? C.green : C.panel,
+            color: selectedInnings === 0 ? "#fff" : C.text,
+            fontWeight: 800,
+            fontSize: 10,
+            cursor: "pointer",
+          }}
+        >
+          {match.teamAName} (1st Inn)
+        </button>
+
+        <button
+          onClick={() => {
+  if (match.innings?.[1]) {
+    setSelectedInnings(1);
+  }
+}}
+          style={{
+            padding: "0 8px",
+height: 44,
+minWidth: 0,
+whiteSpace: "nowrap",
+overflow: "hidden",
+textOverflow: "ellipsis",
+            borderRadius: 10,
+            border: `1px solid ${
+              selectedInnings === 1 ? C.green : C.border
+            }`,
+            background: selectedInnings === 1 ? C.green : C.panel,
+            color: selectedInnings === 1 ? "#fff" : C.text,
+            fontWeight: 800,
+            fontSize: 10,
+            cursor: match.innings?.[1] ? "pointer" : "not-allowed",
+              opacity: match.innings?.[1] ? 1 : 0.45,
+              pointerEvents: match.innings?.[1] ? "auto" : "none",
+          }}
+        >
+          {match.teamBName} (2nd Inn)
+        </button>
+      </div>
+
+
+      {[match.innings[selectedInnings]].map((inn, i) => {
         const teamName = inn.battingTeam === "A" ? match.teamAName : match.teamBName;
         return (
           <Panel key={i} style={{ marginBottom: 14 }}>
@@ -4214,7 +4532,14 @@ function Scorecard({ match, players, onBack }) {
    padding: "7px 0",
   }}
 >
-<span style={{ display: "flex", flexDirection: "column" }}>
+<span
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    textAlign: "left",
+  }}
+>
 <span>
   {playerName(players, pid)}
 
@@ -4257,6 +4582,7 @@ function Scorecard({ match, players, onBack }) {
 </span>
               </div>
             ))}
+
             <div style={{ fontSize: 12, color: C.muted, padding: "6px 0", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
               <div
   style={{
@@ -4356,19 +4682,45 @@ padding: "7px 0",
       Fall of Wickets
     </div>
 
-    {inn.fallOfWickets.map((fow) => (
-      <div
-        key={fow.wicketNumber}
-        style={{
-          fontSize: 12.5,
-          padding: "3px 0",
-        }}
-      >
-        {fow.wicketNumber}-{fow.score} (
-        {playerName(players, fow.batsmanId)},{" "}
-        {formatOvers(fow.legalBalls)} ov)
-      </div>
-    ))}
+   {inn.fallOfWickets.map((fow) => (
+  <div
+    key={fow.wicketNumber}
+    style={{
+      display: "grid",
+      gridTemplateColumns: "minmax(0, 1fr) auto",
+      alignItems: "center",
+      gap: 10,
+      fontSize: 12.5,
+      padding: "7px 0",
+    }}
+  >
+    <div
+  style={{
+    minWidth: 0,
+    textAlign: "left",
+    justifySelf: "start",
+  }}
+>
+      <span style={{ fontWeight: 700 }}>
+        {fow.wicketNumber}. {playerName(players, fow.batsmanId)}
+      </span>
+
+      <span style={{ color: C.muted }}>
+        {" "}({fow.bowlerId ? `b ${playerName(players, fow.bowlerId)}` : ""})
+      </span>
+    </div>
+
+    <div
+      style={{
+        whiteSpace: "nowrap",
+        textAlign: "right",
+        fontWeight: 700,
+      }}
+    >
+      {fow.wicketNumber}-{fow.score} ({formatOvers(fow.legalBalls)} ov)
+    </div>
+  </div>
+))}
   </div>
 )}
 
@@ -4453,6 +4805,111 @@ padding: "7px 0",
     </div>
   );
 })}
+  </div>
+)}
+{/* Partnerships */}
+{((inn.partnerships || []).length > 0 || inn.currentPartnership) && (
+  <div
+    style={{
+      marginTop: 14,
+      paddingTop: 12,
+      borderTop: `1px solid ${C.border}`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 13,
+        fontWeight: 800,
+        color: C.text,
+        textAlign: "center",
+        marginBottom: 10,
+      }}
+    >
+      Partnerships
+    </div>
+
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) 52px minmax(0, 1fr)",
+        gap: 6,
+        padding: "5px 0",
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.muted,
+        borderBottom: `1px solid ${C.border}`,
+      }}
+    >
+      <span style={{ textAlign: "left" }}>Batsman</span>
+      <span style={{ textAlign: "center" }}>Runs</span>
+      <span style={{ textAlign: "right" }}>Batsman</span>
+    </div>
+
+    {(inn.partnerships || []).map((p, index) => (
+      <div
+        key={index}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 52px minmax(0, 1fr)",
+          gap: 6,
+          alignItems: "center",
+          padding: "8px 0",
+          borderBottom: `1px solid ${C.border}`,
+          fontSize: 12,
+        }}
+      >
+        <span style={{ textAlign: "left", minWidth: 0 }}>
+          {playerName(players, p.batsmanAId)} ({p.batsmanARuns || 0})
+        </span>
+
+        <span
+          style={{
+            textAlign: "center",
+            fontWeight: 800,
+            color: C.mustard,
+          }}
+        >
+          {p.runs || 0}
+        </span>
+
+        <span style={{ textAlign: "right", minWidth: 0 }}>
+          {playerName(players, p.batsmanBId)} ({p.batsmanBRuns || 0})
+        </span>
+      </div>
+    ))}
+
+    {inn.currentPartnership && (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 52px minmax(0, 1fr)",
+          gap: 6,
+          alignItems: "center",
+          padding: "8px 0",
+          fontSize: 12,
+        }}
+      >
+        <span style={{ textAlign: "left", minWidth: 0 }}>
+          {playerName(players, inn.currentPartnership.batsmanAId)} (
+          {inn.currentPartnership.batsmanARuns || 0})
+        </span>
+
+        <span
+          style={{
+            textAlign: "center",
+            fontWeight: 800,
+            color: C.green,
+          }}
+        >
+          {inn.currentPartnership.runs || 0}
+        </span>
+
+        <span style={{ textAlign: "right", minWidth: 0 }}>
+          {playerName(players, inn.currentPartnership.batsmanBId)} (
+          {inn.currentPartnership.batsmanBRuns || 0})
+        </span>
+      </div>
+    )}
   </div>
 )}
 

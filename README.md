@@ -1,3 +1,34 @@
+# 🏏 Gully Cricket
+
+A modern cricket scoring application built with React and Vite.
+
+## Features
+- Live cricket scoring
+- Player management
+- Batsman / bowler tracking
+- Match management
+- Scorecard
+- Android APK support
+
+## Tech Stack
+- React
+- Vite
+- JavaScript
+- Capacitor
+- Android
+
+## Screenshots
+
+## Installation
+
+## Android APK
+
+## Future Plans
+
+
+
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
